@@ -1,0 +1,31 @@
+// Types shared between the Extension and the Webview UI
+
+export enum MessageType {
+    HELLO = 'hello',
+    GET_ACTIVE_EDITOR_CONTENT = 'getActiveEditorContent',
+    ACTIVE_EDITOR_CONTENT = 'activeEditorContent',
+    ERROR = 'error',
+    SERVER_STATUS = 'serverStatus',
+    CHAT_MESSAGE = 'chatMessage',
+    SEND_CHAT_MESSAGE = 'sendChatMessage',
+    AI_MESSAGE = 'aiMessage',
+    STOP_GENERATION = 'stopGeneration',
+    GENERATION_FINISHED = 'generationFinished',
+    CODE_REFERENCE = 'codeReference',
+    ADD_CODE_REFERENCE = 'addCodeReference',
+    REMOVE_CODE_REFERENCE = 'removeCodeReference',
+    GET_WORKSPACE_CONTEXT = 'getWorkspaceContext',
+    WORKSPACE_CONTEXT = 'workspaceContext',
+    CHAT_RESPONSE = 'chatResponse',
+    SESSIONS_LIST = 'sessionsList',
+    SESSION_LOADED = 'sessionLoaded',
+    SWITCH_SESSION = 'switchSession',
+    CREATE_SESSION = 'createSession',
+    RENAME_SESSION = 'renameSession',
+    DELETE_SESSION = 'deleteSession',
+    GET_SESSIONS = 'getSessions',
+    SERVER_EXIT = 'serverExit',
+    GET_SERVER_STATUS = 'getServerStatus',
+    RESTART_SERVER = 'restartServer',
+    FOCUS_CHAT_INPUT = 'focusChatInput'
+} 
