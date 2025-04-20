@@ -8,19 +8,19 @@ import * as sinon from 'sinon';
 import { setupTestEnvironment, getTestBinaryPathResolver } from './testUtils';
 
 suite('Extension Test Suite', () => {
-	// Setup test environment
-	const { sandbox, cleanup } = setupTestEnvironment();
+	let testEnv: ReturnType<typeof setupTestEnvironment>;
 	let getBinaryPathStub: sinon.SinonStub;
 
 	setup(() => {
+		testEnv = setupTestEnvironment();
 		// Stub getBinaryPath to prevent errors when the server tries to start
 		getBinaryPathStub = sinon.stub(require('../utils/binaryPath'), 'getBinaryPath');
-		getBinaryPathStub.callsFake(getTestBinaryPathResolver());
+		getBinaryPathStub.callsFake(getTestBinaryPathResolver(testEnv.context));
 	});
 
 	teardown(() => {
 		getBinaryPathStub.restore();
-		cleanup();
+		testEnv.cleanup();
 	});
 
 	test('Extension should be present', () => {

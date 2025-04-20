@@ -17,29 +17,30 @@ suite('ServerManager Tests', () => {
     let mockApiClient: any;
     let mockProcess: any;
     let getBinaryPathStub: sinon.SinonStub;
-
-    // Setup test environment
-    const { sandbox, cleanup } = setupTestEnvironment();
+    let testEnv: ReturnType<typeof setupTestEnvironment>;
 
     setup(() => {
+        testEnv = setupTestEnvironment();
+        mockContext = testEnv.context;
+
         // Stub binary path resolver
         getBinaryPathStub = sinon.stub(require('../../utils/binaryPath'), 'getBinaryPath');
-        getBinaryPathStub.callsFake(getTestBinaryPathResolver());
+        getBinaryPathStub.callsFake(getTestBinaryPathResolver(testEnv.context));
 
         // Create mock process using Object.create and assign properties
         mockProcess = Object.create(EventEmitter.prototype);
         Object.assign(mockProcess, {
-            kill: sandbox.stub(),
+            kill: testEnv.sandbox.stub(),
             pid: 12345,
             stdin: null,
-            stdout: Object.assign(new EventEmitter(), { pipe: sandbox.stub() }),
-            stderr: Object.assign(new EventEmitter(), { pipe: sandbox.stub() }),
+            stdout: Object.assign(new EventEmitter(), { pipe: testEnv.sandbox.stub() }),
+            stderr: Object.assign(new EventEmitter(), { pipe: testEnv.sandbox.stub() }),
             stdio: [null, null, null, null, null],
-            unref: sandbox.stub(),
-            ref: sandbox.stub(),
+            unref: testEnv.sandbox.stub(),
+            ref: testEnv.sandbox.stub(),
             connected: false,
-            disconnect: sandbox.stub(),
-            send: sandbox.stub(),
+            disconnect: testEnv.sandbox.stub(),
+            send: testEnv.sandbox.stub(),
             channel: null,
             spawnargs: [],
             spawnfile: '',
@@ -52,7 +53,7 @@ suite('ServerManager Tests', () => {
         });
 
         // Create the startGoosed stub function manually
-        startGoosedStub = sandbox.stub<Parameters<typeof actualGooseServer.startGoosed>, Promise<actualGooseServer.GooseServerInfo>>();
+        startGoosedStub = testEnv.sandbox.stub<Parameters<typeof actualGooseServer.startGoosed>, Promise<actualGooseServer.GooseServerInfo>>();
         startGoosedStub.resolves({
             port: 8000,
             workingDir: path.resolve(__dirname, '../../../test-workspace'),
@@ -67,9 +68,9 @@ suite('ServerManager Tests', () => {
             asAbsolutePath: (relativePath: string) => path.resolve(__dirname, '../../../', relativePath),
             storageUri: undefined,
             globalState: {
-                get: sandbox.stub(),
-                update: sandbox.stub(),
-                setKeysForSync: sandbox.stub()
+                get: testEnv.sandbox.stub(),
+                update: testEnv.sandbox.stub(),
+                setKeysForSync: testEnv.sandbox.stub()
             } as unknown as vscode.Memento & { setKeysForSync(keys: readonly string[]): void },
             workspaceState: {} as vscode.Memento,
             secrets: {} as vscode.SecretStorage,
@@ -85,22 +86,22 @@ suite('ServerManager Tests', () => {
             name: 'Test Workspace',
             index: 0
         };
-        workspaceFoldersStub = sandbox.stub(vscode.workspace, 'workspaceFolders');
+        workspaceFoldersStub = testEnv.sandbox.stub(vscode.workspace, 'workspaceFolders');
         workspaceFoldersStub.value([mockWorkspaceFolder]);
 
         // Mock the ApiClient constructor
         mockApiClient = {
-            getAgentVersions: sandbox.stub().resolves({ versions: ['1.0.0', '2.0.0'] }),
-            createAgent: sandbox.stub().resolves({ id: 'test-agent-id' }),
-            request: sandbox.stub().resolves({}),
-            getConversations: sandbox.stub().resolves([]),
-            createConversation: sandbox.stub().resolves({ id: 'test-conversation-id' }),
-            sendMessage: sandbox.stub().resolves({ id: 'test-message-id' }),
-            getConfiguration: sandbox.stub().resolves({}),
-            updateConfiguration: sandbox.stub().resolves({}),
-            checkStatus: sandbox.stub().resolves(true),
-            addExtension: sandbox.stub().resolves({ id: 'test-extension-id' }),
-            streamMessage: sandbox.stub().callsFake(() => {
+            getAgentVersions: testEnv.sandbox.stub().resolves({ versions: ['1.0.0', '2.0.0'] }),
+            createAgent: testEnv.sandbox.stub().resolves({ id: 'test-agent-id' }),
+            request: testEnv.sandbox.stub().resolves({}),
+            getConversations: testEnv.sandbox.stub().resolves([]),
+            createConversation: testEnv.sandbox.stub().resolves({ id: 'test-conversation-id' }),
+            sendMessage: testEnv.sandbox.stub().resolves({ id: 'test-message-id' }),
+            getConfiguration: testEnv.sandbox.stub().resolves({}),
+            updateConfiguration: testEnv.sandbox.stub().resolves({}),
+            checkStatus: testEnv.sandbox.stub().resolves(true),
+            addExtension: testEnv.sandbox.stub().resolves({ id: 'test-extension-id' }),
+            streamMessage: testEnv.sandbox.stub().callsFake(() => {
                 const emitter = new EventEmitter();
                 setTimeout(() => {
                     emitter.emit('data', { content: 'test content' });
@@ -115,7 +116,7 @@ suite('ServerManager Tests', () => {
                 Object.assign(this, mockApiClient);
             }
         }
-        sandbox.stub(require('../../server/apiClient'), 'ApiClient').value(MockApiClient);
+        testEnv.sandbox.stub(require('../../server/apiClient'), 'ApiClient').value(MockApiClient);
 
         // Create the server manager with silent logger
         serverManager = new ServerManager(mockContext as vscode.ExtensionContext, startGoosedStub);
@@ -126,7 +127,7 @@ suite('ServerManager Tests', () => {
 
     teardown(() => {
         getBinaryPathStub.restore();
-        cleanup();
+        testEnv.cleanup();
     });
 
     test('should have stopped status initially', () => {
@@ -134,7 +135,7 @@ suite('ServerManager Tests', () => {
     });
 
     test('should emit status change events', async () => {
-        const statusChangeListener = sandbox.spy();
+        const statusChangeListener = testEnv.sandbox.spy();
         serverManager.on(ServerEvents.STATUS_CHANGE, statusChangeListener);
         await serverManager.start();
 
@@ -160,8 +161,8 @@ suite('ServerManager Tests', () => {
     });
 
     test('should handle errors during server start', async () => {
-        sandbox.stub(serverManager as any, 'getWorkspaceDirectory').throws(new Error('Workspace directory error'));
-        const errorListener = sandbox.spy();
+        testEnv.sandbox.stub(serverManager as any, 'getWorkspaceDirectory').throws(new Error('Workspace directory error'));
+        const errorListener = testEnv.sandbox.spy();
         serverManager.on(ServerEvents.ERROR, errorListener);
 
         const result = await serverManager.start();
@@ -174,7 +175,7 @@ suite('ServerManager Tests', () => {
 
     test('should handle server start failure gracefully', async () => {
         startGoosedStub.rejects(new Error('Test error from injected stub'));
-        const errorListener = sandbox.spy();
+        const errorListener = testEnv.sandbox.spy();
         serverManager.on(ServerEvents.ERROR, errorListener);
 
         const result = await serverManager.start();
@@ -188,10 +189,10 @@ suite('ServerManager Tests', () => {
     test('should handle server process exit', async () => {
         await serverManager.start();
 
-        const exitListener = sandbox.spy();
+        const exitListener = testEnv.sandbox.spy();
         serverManager.on(ServerEvents.SERVER_EXIT, exitListener);
 
-        const statusChangeListener = sandbox.spy();
+        const statusChangeListener = testEnv.sandbox.spy();
         serverManager.on(ServerEvents.STATUS_CHANGE, statusChangeListener);
 
         const serverProcess = (serverManager as any).serverInfo.process;
@@ -204,10 +205,10 @@ suite('ServerManager Tests', () => {
     test('should handle server process crash', async () => {
         await serverManager.start();
 
-        const exitListener = sandbox.spy();
+        const exitListener = testEnv.sandbox.spy();
         serverManager.on(ServerEvents.SERVER_EXIT, exitListener);
 
-        const statusChangeListener = sandbox.spy();
+        const statusChangeListener = testEnv.sandbox.spy();
         serverManager.on(ServerEvents.STATUS_CHANGE, statusChangeListener);
 
         const serverProcess = (serverManager as any).serverInfo.process;
@@ -220,10 +221,10 @@ suite('ServerManager Tests', () => {
     test('should handle server process exit with null code', async () => {
         await serverManager.start();
 
-        const exitListener = sandbox.spy();
+        const exitListener = testEnv.sandbox.spy();
         serverManager.on(ServerEvents.SERVER_EXIT, exitListener);
 
-        const statusChangeListener = sandbox.spy();
+        const statusChangeListener = testEnv.sandbox.spy();
         serverManager.on(ServerEvents.STATUS_CHANGE, statusChangeListener);
 
         const serverProcess = (serverManager as any).serverInfo.process;
@@ -236,7 +237,7 @@ suite('ServerManager Tests', () => {
     test('should not emit server exit event when stopping server manually', async () => {
         await serverManager.start();
 
-        const exitListener = sandbox.spy();
+        const exitListener = testEnv.sandbox.spy();
         serverManager.on(ServerEvents.SERVER_EXIT, exitListener);
 
         await serverManager.stop();
