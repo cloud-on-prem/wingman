@@ -9,7 +9,7 @@
   },
   "license": "MIT",
   "icon": "resources/goose-icon.png",
-  "publisher": "Project Wingman",
+  "publisher": "prempillai",
   "engines": {
     "vscode": "^1.95.0"
   },
