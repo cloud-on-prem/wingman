@@ -126,6 +126,23 @@ sequenceDiagram
     Note over ExtHost, GoosedProcess: `startGoosed` function handles spawning
     GoosedProcess-->>ExtHost: Process started, port assigned
     ExtHost->>ExtHost: Create ApiClient (with port, secret key)
+    
+    %% Status Check and Agent Configuration %%
+    ExtHost->>GoosedProcess: GET /status (check server health)
+    GoosedProcess-->>ExtHost: 200 OK (server ready)
+    
+    %% Agent Version Check %%
+    ExtHost->>GoosedProcess: GET /agent/versions
+    GoosedProcess-->>ExtHost: Available versions and default version
+    
+    %% Configure Agent %%
+    ExtHost->>GoosedProcess: POST /agent (configure provider/model)
+    GoosedProcess-->>ExtHost: Agent configuration success
+    
+    %% Add Extensions %%
+    ExtHost->>GoosedProcess: POST /extensions/add (add developer extension)
+    GoosedProcess-->>ExtHost: Extension added successfully
+    
     ExtHost->>ExtHost: Set Status = RUNNING
     ExtHost->>ChatWebview: Post message (SERVER_STATUS, running)
     deactivate ExtHost #LightSkyBlue
@@ -173,6 +190,11 @@ sequenceDiagram
     *   It locates the `goosed` executable (likely bundled or found in the Goose Desktop installation).
     *   It spawns `goosed` as a child process, passing configuration like the working directory and the secret key (e.g., via command-line flag or environment variable).
     *   Once the process confirms it's running and listening on a port, the `ServerManager` creates an `ApiClient` configured with the port and secret key.
+    *   It checks server health via `/status` endpoint.
+    *   It configures the agent by:
+        *   Fetching available versions from `/agent/versions`
+        *   Creating the agent with appropriate provider and model via `/agent`
+        *   Adding extensions like the "developer" extension via `/extensions/add`
     *   The status is updated to `RUNNING` and propagated to the Chat Webview.
 3.  **Stopping:**
     *   The `stop` method (triggered by command or extension deactivation) sends a termination signal to the `goosed` process.
