@@ -1,31 +1,18 @@
+# Goose VSCode Extension Development
+
+This document provides information for developers working on the Goose VSCode extension.
+For user documentation, see the main [README.md](../README.md).
+For architectural details, see [ARCHITECTURE.md](./ARCHITECTURE.md).
+
 ## Dev Set up
 
 1. Clone the repository
-2. Navigate to the project root directory (where this `DEVELOPMENT.md` file is located)
+2. Navigate to the project root directory
 3. Install dependencies: `npm install`
 4. Install webview dependencies: `cd webview-ui && npm install && cd ..`
 5. Build the webview: `npm run build-webview` (or use `npm run compile` which includes this)
 6. Open the project root in VSCode: `code .`
 7. Press F5 to start debugging
-
-## Architecture
-
-The extension consists of three main components:
-
-1. **VSCode Extension Host** - The main extension code that integrates with VSCode's API
-2. **WebView UI** - A React-based UI for chat interaction, reusing components from the Goose desktop app
-3. **Goose Server Integration** - Code to start, connect to, and communicate with the Goose backend server
-
-### Server Integration
-
-The extension includes a robust server integration layer that:
-
-- Manages the lifecycle of the Goose server process
-- Handles secure communication with authentication
-- Processes streaming responses from the AI
-- Manages error handling and recovery
-- Provides a clean API for the WebView to interact with
-
 
 ## Testing
 
@@ -143,3 +130,7 @@ Since direct commits to the main branch are restricted, follow this process for 
 This will trigger the GitHub workflow to create a release with the packaged extension.
 
 The workflow can also be triggered manually from the GitHub Actions tab, where you can specify the version to release.
+
+## Known Issues
+
+Refer to the [GitHub issues page](https://github.com/cloud-on-prem/goose/issues) for any known issues related to the VSCode extension. 
