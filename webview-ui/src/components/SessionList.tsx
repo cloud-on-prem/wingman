@@ -4,9 +4,11 @@ export interface SessionMetadata {
     id: string;
     metadata: {
         title: string;
+        description?: string;
         created?: number;
         updated?: number;
     };
+    isLocal?: boolean;
 }
 
 interface SessionListProps {
@@ -54,22 +56,36 @@ export const SessionList: React.FC<SessionListProps> = ({
                         No saved sessions
                     </div>
                 ) : (
-                    validSessions.map(session => (
-                        <div
-                            key={session.id}
-                            className={`vscode-session-item ${currentSessionId === session.id ? 'active' : ''}`}
-                            onClick={() => onSessionSelect(session.id)}
-                        >
-                            <div className="vscode-session-item-content">
-                                <div className="vscode-session-item-name">
-                                    {session.metadata.title || `Session ${session.id.slice(0, 6)}`}
-                                </div>
-                                <div className="vscode-session-item-info">
-                                    {new Date(session.metadata.updated || session.metadata.created || Date.now()).toLocaleString()}
+                    validSessions.map(session => {
+                        // Determine the display name based on isLocal flag and description
+                        let displayName;
+
+                        if (session.isLocal) {
+                            displayName = "New Chat";
+                        } else if (session.metadata.description && session.metadata.description.trim()) {
+                            displayName = session.metadata.description.trim();
+                        } else {
+                            displayName = "Untitled Session";
+                        }
+
+                        return (
+                            <div
+                                key={session.id}
+                                className={`vscode-session-item ${currentSessionId === session.id ? 'active' : ''}`}
+                                onClick={() => onSessionSelect(session.id)}
+                                title={displayName} // Show full name on hover
+                            >
+                                <div className="vscode-session-item-content">
+                                    <div className="vscode-session-item-name session-name-truncated">
+                                        {displayName}
+                                    </div>
+                                    <div className="vscode-session-item-info">
+                                        {new Date(session.metadata.updated || session.metadata.created || Date.now()).toLocaleString()}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    ))
+                        );
+                    })
                 )}
             </div>
         </div>

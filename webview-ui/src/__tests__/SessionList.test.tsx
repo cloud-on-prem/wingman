@@ -29,6 +29,7 @@ describe('SessionList Component', () => {
                 id: 'session-1',
                 metadata: {
                     title: 'Session 1',
+                    description: 'Description 1',
                     created: Date.now() - 10000,
                     updated: Date.now()
                 }
@@ -37,6 +38,7 @@ describe('SessionList Component', () => {
                 id: 'session-2',
                 metadata: {
                     title: 'Session 2',
+                    description: 'Description 2',
                     created: Date.now() - 20000,
                     updated: Date.now() - 5000
                 }
@@ -52,8 +54,8 @@ describe('SessionList Component', () => {
             />
         );
 
-        expect(screen.getByText('Session 1')).toBeInTheDocument();
-        expect(screen.getByText('Session 2')).toBeInTheDocument();
+        expect(screen.getByText('Description 1')).toBeInTheDocument();
+        expect(screen.getByText('Description 2')).toBeInTheDocument();
         expect(screen.queryByText('No saved sessions')).not.toBeInTheDocument();
     });
 
@@ -66,6 +68,7 @@ describe('SessionList Component', () => {
                 id: 'session-1',
                 metadata: {
                     title: 'Session 1',
+                    description: 'Description 1',
                     created: Date.now(),
                     updated: Date.now()
                 }
@@ -74,6 +77,7 @@ describe('SessionList Component', () => {
                 id: 'session-2',
                 metadata: {
                     title: 'Session 2',
+                    description: 'Description 2',
                     created: Date.now(),
                     updated: Date.now()
                 }
@@ -89,7 +93,7 @@ describe('SessionList Component', () => {
             />
         );
 
-        // Find the element containing "Session 1" to check if its parent has the "active" class
+        // Find the element containing "Description 1" to check if its parent has the "active" class
         const sessionItems = container.querySelectorAll('.vscode-session-item');
         expect(sessionItems[0]).toHaveClass('active');
         expect(sessionItems[1]).not.toHaveClass('active');
@@ -104,6 +108,7 @@ describe('SessionList Component', () => {
                 id: 'session-1',
                 metadata: {
                     title: 'Session 1',
+                    description: 'Description 1',
                     created: Date.now(),
                     updated: Date.now()
                 }
@@ -119,7 +124,7 @@ describe('SessionList Component', () => {
             />
         );
 
-        fireEvent.click(screen.getByText('Session 1'));
+        fireEvent.click(screen.getByText('Description 1'));
         expect(mockSessionSelect).toHaveBeenCalledWith('session-1');
     });
 
@@ -142,7 +147,7 @@ describe('SessionList Component', () => {
         expect(mockCreateSession).toHaveBeenCalledTimes(1);
     });
 
-    it('displays fallback for session with empty title', () => {
+    it('displays "New Chat" for session with isLocal=true', () => {
         const mockSessionSelect = vi.fn();
         const mockCreateSession = vi.fn();
 
@@ -150,7 +155,121 @@ describe('SessionList Component', () => {
             {
                 id: 'session-1',
                 metadata: {
-                    title: '', // Empty title
+                    title: 'Session Title',
+                    description: 'Session Description',
+                    created: Date.now(),
+                    updated: Date.now()
+                },
+                isLocal: true
+            }
+        ];
+
+        render(
+            <SessionList
+                sessions={sessions}
+                currentSessionId={null}
+                onSessionSelect={mockSessionSelect}
+                onCreateSession={mockCreateSession}
+            />
+        );
+
+        expect(screen.getByText('New Chat')).toBeInTheDocument();
+    });
+
+    it('displays description for session with description', () => {
+        const mockSessionSelect = vi.fn();
+        const mockCreateSession = vi.fn();
+
+        const sessions: SessionMetadata[] = [
+            {
+                id: 'session-1',
+                metadata: {
+                    title: 'Session Title',
+                    description: 'My Custom Description',
+                    created: Date.now(),
+                    updated: Date.now()
+                }
+            }
+        ];
+
+        render(
+            <SessionList
+                sessions={sessions}
+                currentSessionId={null}
+                onSessionSelect={mockSessionSelect}
+                onCreateSession={mockCreateSession}
+            />
+        );
+
+        expect(screen.getByText('My Custom Description')).toBeInTheDocument();
+    });
+
+    it('displays "Untitled Session" for session with empty description', () => {
+        const mockSessionSelect = vi.fn();
+        const mockCreateSession = vi.fn();
+
+        const sessions: SessionMetadata[] = [
+            {
+                id: 'session-1',
+                metadata: {
+                    title: 'Session Title',
+                    description: '',  // Empty description
+                    created: Date.now(),
+                    updated: Date.now()
+                }
+            }
+        ];
+
+        render(
+            <SessionList
+                sessions={sessions}
+                currentSessionId={null}
+                onSessionSelect={mockSessionSelect}
+                onCreateSession={mockCreateSession}
+            />
+        );
+
+        expect(screen.getByText('Untitled Session')).toBeInTheDocument();
+    });
+
+    it('displays "Untitled Session" for session with null/undefined description', () => {
+        const mockSessionSelect = vi.fn();
+        const mockCreateSession = vi.fn();
+
+        const sessions: SessionMetadata[] = [
+            {
+                id: 'session-1',
+                metadata: {
+                    title: 'Session Title',
+                    // No description property
+                    created: Date.now(),
+                    updated: Date.now()
+                }
+            }
+        ];
+
+        render(
+            <SessionList
+                sessions={sessions}
+                currentSessionId={null}
+                onSessionSelect={mockSessionSelect}
+                onCreateSession={mockCreateSession}
+            />
+        );
+
+        expect(screen.getByText('Untitled Session')).toBeInTheDocument();
+    });
+
+    it('applies truncation class to session names', () => {
+        const mockSessionSelect = vi.fn();
+        const mockCreateSession = vi.fn();
+
+        const sessions: SessionMetadata[] = [
+            {
+                id: 'session-1',
+                metadata: {
+                    title: 'Session Title',
+                    description: 'A very long description that should be truncated in the UI because it exceeds the width of the container',
                     created: Date.now(),
                     updated: Date.now()
                 }
@@ -166,9 +285,7 @@ describe('SessionList Component', () => {
             />
         );
 
-        // Find the session item name element by class and check its content
-        const sessionItemName = container.querySelector('.vscode-session-item-name');
-        expect(sessionItemName).toBeInTheDocument();
-        expect(sessionItemName.textContent).toContain('Session');
+        const nameElement = container.querySelector('.vscode-session-item-name');
+        expect(nameElement).toHaveClass('session-name-truncated');
     });
 }); 

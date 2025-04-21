@@ -3,7 +3,7 @@ import { TextDecoder } from 'util';
 import { ServerManager } from '../serverManager';
 import { Message, createUserMessage } from '../../types';
 import * as vscode from 'vscode';
-import { SessionManager } from './sessionManager';
+import { SessionManager, SessionEvents } from './sessionManager';
 
 /**
  * Events emitted by the chat processor
@@ -105,6 +105,9 @@ export class ChatProcessor {
             // If this was a new session, load the session info after sending the first message
             if (!effectiveSessionId && this.sessionManager) {
                 await this.sessionManager.fetchSessions();
+            } else if (effectiveSessionId && this.sessionManager) {
+                // Update existing session to remove isLocal flag after successful reply
+                await this.updateSessionAfterReply(effectiveSessionId);
             }
 
             if (!response.ok) {
@@ -475,6 +478,41 @@ export class ChatProcessor {
 
         // Don't emit the message event here - only in the main function
         return aiMessage;
+    }
+
+    /**
+     * Update a session after a successful reply to remove the isLocal flag
+     * @param sessionId The ID of the session to update
+     */
+    private async updateSessionAfterReply(sessionId: string): Promise<void> {
+        if (!this.sessionManager) {
+            return;
+        }
+
+        try {
+            // Get the sessions list
+            const sessions = this.sessionManager.getSessions();
+
+            // Find the session with the matching ID
+            const sessionIndex = sessions.findIndex(session => session.id === sessionId);
+
+            if (sessionIndex !== -1 && sessions[sessionIndex].isLocal) {
+                console.log(`Updating session ${sessionId} to remove isLocal flag after successful reply`);
+
+                // Create a new session object without the isLocal flag
+                const updatedSession = { ...sessions[sessionIndex] };
+                delete updatedSession.isLocal;
+
+                // Update the session in the sessions array
+                const updatedSessions = [...sessions];
+                updatedSessions[sessionIndex] = updatedSession;
+
+                // Emit the sessions loaded event with the updated list
+                this.sessionManager.emitEvent(SessionEvents.SESSIONS_LOADED, updatedSessions);
+            }
+        } catch (error) {
+            console.error('Error updating session after reply:', error);
+        }
     }
 }
 
