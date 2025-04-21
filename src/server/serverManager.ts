@@ -6,6 +6,10 @@ import { getBinaryPath as actualGetBinaryPath } from '../utils/binaryPath';
 import { Message } from 'src/types';
 import * as cp from 'child_process';
 import * as crypto from 'crypto';
+import { DefaultLogger, getLogger, LogLevel, Logger } from '../utils/logging';
+
+// Get a logger instance for the ServerManager
+const logger = getLogger('ServerManager');
 
 /**
  * Server status options
@@ -43,6 +47,7 @@ export interface ServerManagerDependencies {
     startGoosed?: StartGoosedFn;
     getBinaryPath?: GetBinaryPathFn;
     ApiClient?: ApiClientConstructor;
+    logger?: Logger;
 }
 
 /**
@@ -60,6 +65,7 @@ export class ServerManager {
     private startGoosedFn: StartGoosedFn;
     private getBinaryPathFn: GetBinaryPathFn;
     private ApiClientConstructor: ApiClientConstructor;
+    private logger: Logger;
 
     constructor(
         context: vscode.ExtensionContext,
@@ -73,6 +79,7 @@ export class ServerManager {
         this.startGoosedFn = dependencies.startGoosed || actualStartGoosed;
         this.getBinaryPathFn = dependencies.getBinaryPath || actualGetBinaryPath;
         this.ApiClientConstructor = dependencies.ApiClient || ActualApiClient;
+        this.logger = dependencies.logger || logger;
 
         // Generate a new secret key on initialization
         this.secretKey = this.generateSecretKey();
@@ -106,7 +113,7 @@ export class ServerManager {
      */
     public async start(): Promise<boolean> {
         if (this.status !== ServerStatus.STOPPED) {
-            console.log('Server is already running or starting');
+            this.logger.info('Server is already running or starting');
             return false;
         }
 
@@ -114,12 +121,12 @@ export class ServerManager {
         this.secretKey = this.generateSecretKey();
 
         this.setStatus(ServerStatus.STARTING);
-        console.log('Starting Goose server...');
+        this.logger.info('Starting Goose server...');
 
         // Log partial secret key for debugging (without revealing the full key)
         const keyPrefix = this.secretKey.substring(0, 4);
         const keySuffix = this.secretKey.substring(this.secretKey.length - 4);
-        console.log(`Using secret key: ${keyPrefix}...${keySuffix} (${this.secretKey.length} chars)`);
+        this.logger.debug(`Using secret key: ${keyPrefix}...${keySuffix} (${this.secretKey.length} chars)`);
 
         try {
             // Configure and start the server
@@ -127,8 +134,8 @@ export class ServerManager {
                 workingDir: this.getWorkspaceDirectory(),
                 getBinaryPath: (binaryName: string) => this.getBinaryPathFn(this.context, binaryName),
                 logger: {
-                    info: (message: string, ...args: any[]) => console.info(`[GooseServer] ${message}`, ...args),
-                    error: (message: string, ...args: any[]) => console.error(`[GooseServer] ${message}`, ...args)
+                    info: (message: string, ...args: any[]) => this.logger.info(`[GooseServer] ${message}`, ...args),
+                    error: (message: string, ...args: any[]) => this.logger.error(`[GooseServer] ${message}`, ...args)
                 },
                 events: this.extensionEvents,
                 secretKey: this.secretKey
@@ -139,7 +146,7 @@ export class ServerManager {
 
             // Set up process exit handler
             this.serverInfo.process.on('close', (code) => {
-                console.log(`Server process exited with code ${code}`);
+                this.logger.info(`Server process exited with code ${code}`);
                 this.setStatus(ServerStatus.STOPPED);
                 this.eventEmitter.emit(ServerEvents.SERVER_EXIT, code);
             });
@@ -150,8 +157,8 @@ export class ServerManager {
                 secretKey: this.secretKey,
                 debug: true,
                 logger: {
-                    info: (message: string, ...args: any[]) => console.info(`[ApiClient] ${message}`, ...args),
-                    error: (message: string, ...args: any[]) => console.error(`[ApiClient] ${message}`, ...args)
+                    info: (message: string, ...args: any[]) => this.logger.info(`[ApiClient] ${message}`, ...args),
+                    error: (message: string, ...args: any[]) => this.logger.error(`[ApiClient] ${message}`, ...args)
                 }
             });
 
@@ -161,14 +168,14 @@ export class ServerManager {
             this.setStatus(ServerStatus.RUNNING);
             return true;
         } catch (error) {
-            console.error('Error starting Goose server:', error);
+            this.logger.error('Error starting Goose server:', error);
 
             // Check for specific binary not found error
             const errorMessage = error instanceof Error ? error.message : String(error);
             if (errorMessage.includes('find the') && errorMessage.includes('executable')) {
                 // The error message from getBinaryPath already includes instructions and shows a VS Code notification
                 // So we don't need to show another message, just set the status to ERROR
-                console.error('Failed to find Goose Desktop installation. Please install it from https://block.github.io/goose/');
+                this.logger.error('Failed to find Goose Desktop installation. Please install it from https://block.github.io/goose/');
             } else {
                 // For other errors, show a generic error message
                 vscode.window.showErrorMessage(
@@ -188,12 +195,12 @@ export class ServerManager {
      */
     private async configureAgent(): Promise<void> {
         if (!this.apiClient) {
-            console.error('Cannot configure agent: API client not initialized');
+            this.logger.error('Cannot configure agent: API client not initialized');
             return;
         }
 
         try {
-            console.info('Configuring Goose agent...');
+            this.logger.info('Configuring Goose agent...');
 
             // Use Databricks with Claude model by default - doesn't require API keys
             let providerToUse = 'databricks';
@@ -203,20 +210,20 @@ export class ServerManager {
             try {
                 // Get available versions first
                 const versions = await this.apiClient.getAgentVersions();
-                console.info(`Available versions: ${JSON.stringify(versions)}`);
+                this.logger.info(`Available versions: ${JSON.stringify(versions)}`);
 
                 if (versions && versions.default_version) {
                     versionToUse = versions.default_version;
-                    console.info(`Using default version: ${versionToUse}`);
+                    this.logger.info(`Using default version: ${versionToUse}`);
                 }
             } catch (err) {
-                console.error('Error getting versions, using default:', err);
+                this.logger.error('Error getting versions, using default:', err);
                 // Continue with default version
             }
 
             // Create the agent with Databricks provider
             try {
-                console.info(`Creating agent with provider: ${providerToUse}, model: ${modelToUse}`);
+                this.logger.info(`Creating agent with provider: ${providerToUse}, model: ${modelToUse}`);
 
                 const agentResult = await this.apiClient.createAgent(
                     providerToUse,  // Use databricks provider
@@ -224,24 +231,24 @@ export class ServerManager {
                     versionToUse     // Use the version we determined
                 );
 
-                console.info(`Agent created successfully: ${JSON.stringify(agentResult)}`);
+                this.logger.info(`Agent created successfully: ${JSON.stringify(agentResult)}`);
 
                 // Extend the agent with the VSCode developer extension
                 try {
                     await this.apiClient.addExtension('developer');
-                    console.info('Added developer extension to agent');
+                    this.logger.info('Added developer extension to agent');
                 } catch (promptErr) {
-                    console.error('Failed to add developer extension:', promptErr);
+                    this.logger.error('Failed to add developer extension:', promptErr);
                     // Continue even if extension addition fails
                 }
 
             } catch (agentErr) {
-                console.error(`Failed to create agent with provider ${providerToUse}:`, agentErr);
+                this.logger.error(`Failed to create agent with provider ${providerToUse}:`, agentErr);
                 throw agentErr; // Re-throw the error
             }
 
         } catch (error) {
-            console.error('Error configuring agent:', error);
+            this.logger.error('Error configuring agent:', error);
             this.eventEmitter.emit(ServerEvents.ERROR, error);
             throw error;
         }
@@ -252,7 +259,7 @@ export class ServerManager {
      */
     public stop(): void {
         if (this.serverInfo?.process) {
-            console.info('Stopping Goose server');
+            this.logger.info('Stopping Goose server');
 
             try {
                 if (process.platform === 'win32' && this.serverInfo.process.pid) {
@@ -262,7 +269,7 @@ export class ServerManager {
                     this.serverInfo.process.kill();
                 }
             } catch (error) {
-                console.error('Error stopping Goose server:', error);
+                this.logger.error('Error stopping Goose server:', error);
             }
 
             this.serverInfo = null;
@@ -328,7 +335,7 @@ export class ServerManager {
                 workingDir
             );
         } catch (error) {
-            console.error('Error sending chat message:', error);
+            this.logger.error('Error sending chat message:', error);
             this.eventEmitter.emit(ServerEvents.ERROR, error);
             return null;
         }
@@ -366,7 +373,7 @@ export class ServerManager {
         this.eventEmitter.emit(ServerEvents.STATUS_CHANGE, status);
         // Also emit a general event for extension to listen to
         this.extensionEvents.emit('statusChanged', status);
-        console.log(`Server status changed to ${status}`);
+        this.logger.info(`Server status changed to ${status}`);
     }
 
     /**

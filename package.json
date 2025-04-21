@@ -37,6 +37,33 @@
         }
       ]
     },
+    "configuration": {
+      "title": "Goose",
+      "properties": {
+        "goose.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable/disable the Goose extension"
+        },
+        "goose.logLevel": {
+          "type": "string",
+          "enum": [
+            "none",
+            "error",
+            "warn",
+            "info",
+            "debug"
+          ],
+          "default": "info",
+          "description": "Control the verbosity of log messages (none, error, warn, info, debug)"
+        },
+        "goose.server.path": {
+          "type": "string",
+          "default": "",
+          "description": "Custom path to the Goose Desktop installation. Leave empty for auto-detection."
+        }
+      }
+    },
     "commands": [
       {
         "command": "goose.helloWorld",

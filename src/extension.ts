@@ -12,6 +12,11 @@ import { GooseCodeActionProvider } from './utils/codeActionProvider';
 import { SessionManager, SessionEvents } from './server/chat/sessionManager';
 // Import MessageType from common types
 import { MessageType } from './common-types';
+// Import logging utilities
+import { DefaultLogger, getLogger, LogLevel } from './utils/logging';
+
+// Create logger for the extension
+const logger = getLogger('Extension');
 
 // Interface for messages sent between extension and webview
 interface WebviewMessage {
@@ -538,6 +543,10 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
 	console.log('Activating Goose extension');
+
+	// Initialize logger with configuration
+	DefaultLogger.initializeFromConfig(context);
+	logger.info('Goose extension activated with log level: ' + LogLevel[DefaultLogger.getGlobalLevel()]);
 
 	// Create server manager with dependencies (using defaults)
 	const serverManager = new ServerManager(context, {
