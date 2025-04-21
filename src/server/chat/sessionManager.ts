@@ -13,7 +13,8 @@ export interface SessionMetadata {
         description: string;
         message_count: number;
         total_tokens: number;
-    }
+    };
+    isLocal?: boolean;
 }
 
 export interface Session {
@@ -69,7 +70,14 @@ export class SessionManager {
                         } else if (!session.metadata.title) {
                             session.metadata.title = `Session ${session.id.slice(0, 8)}`;
                         }
-                        return session;
+
+                        // Remove isLocal flag for sessions from the backend
+                        const processedSession = { ...session };
+                        if (processedSession.isLocal) {
+                            delete processedSession.isLocal;
+                        }
+
+                        return processedSession;
                     });
 
                     this.sessions = processedSessions;
@@ -182,7 +190,8 @@ export class SessionManager {
                     description: sessionTitle,
                     message_count: 0,
                     total_tokens: 0
-                }
+                },
+                isLocal: true // Mark this session as local-only
             };
 
             // Update local state
@@ -225,13 +234,25 @@ export class SessionManager {
     }
 
     /**
-     * Event subscription methods
+     * Emit a session-related event (public method for external use)
+     * @param event Event name from SessionEvents
+     * @param data Event data
+     */
+    public emitEvent(event: SessionEvents, data: any): void {
+        this.eventEmitter.emit(event, data);
+    }
+
+    /**
+     * Subscribe to session events
      */
     public on(event: SessionEvents, listener: (...args: any[]) => void): void {
         this.eventEmitter.on(event, listener);
     }
 
-    public off(event: SessionEvents, listener: (...args: any[]) => void): void {
+    /**
+     * Unsubscribe from session events
+     */
+    public off(event: string, listener: (...args: any[]) => void): void {
         this.eventEmitter.off(event, listener);
     }
 

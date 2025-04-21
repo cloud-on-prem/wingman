@@ -18,15 +18,26 @@ export const SessionIndicator: React.FC<SessionIndicatorProps> = ({
         currentSession.metadata &&
         typeof currentSession.metadata === 'object';
 
-    const sessionName = isValidSession
-        ? (currentSession.metadata.title || `Session ${currentSession.id.slice(0, 8)}`)
-        : 'New Chat';
+    // Determine the session name to display based on isLocal flag and description
+    let sessionName = 'New Chat';
+
+    if (isValidSession) {
+        if (currentSession.isLocal) {
+            sessionName = 'New Chat';
+        } else if (currentSession.metadata.description && currentSession.metadata.description.trim()) {
+            sessionName = currentSession.metadata.description.trim();
+        } else if (currentSession.metadata.title) {
+            sessionName = currentSession.metadata.title;
+        } else {
+            sessionName = 'Untitled Session';
+        }
+    }
 
     return (
         <div
             className={`vscode-session-indicator ${isGenerating ? 'disabled' : ''}`}
             onClick={isGenerating ? undefined : onToggleSessionDrawer}
-            title={isGenerating ? 'Cannot change sessions while generating' : 'Click to manage sessions'}
+            title={isGenerating ? 'Cannot change sessions while generating' : sessionName}
             style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -37,10 +48,7 @@ export const SessionIndicator: React.FC<SessionIndicatorProps> = ({
             }}
         >
             <i className="codicon codicon-comment-discussion" style={{ flexShrink: 0 }}></i>
-            <span className="vscode-session-name" style={{
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
+            <span className="vscode-session-name session-name-truncated" style={{
                 flex: '1 1 auto',
                 minWidth: 0
             }}>{sessionName}</span>
