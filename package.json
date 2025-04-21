@@ -1,15 +1,15 @@
 {
-  "name": "goose-vscode",
-  "displayName": "Goose",
+  "name": "wingman-goose",
+  "displayName": "Wingman Goose",
   "description": "Goose AI for VSCode",
   "version": "0.1.3",
   "repository": {
     "type": "git",
-    "url": "https://github.com/block/goose"
+    "url": "https://github.com/cloud-on-prem/wingman"
   },
   "license": "MIT",
   "icon": "resources/goose-icon.png",
-  "publisher": "Block",
+  "publisher": "Project Wingman",
   "engines": {
     "vscode": "^1.95.0"
   },
