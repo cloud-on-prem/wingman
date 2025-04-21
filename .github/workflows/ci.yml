@@ -3,39 +3,133 @@ name: CI
 on:
   push:
     branches: [ main ]
+    tags:
+      - 'vscode-v*'
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 0.1.0)'
+        required: true
+        type: string
 
 jobs:
   test:
-    name: Test
+    name: Lint and Test
     runs-on: ubuntu-latest
-
+    # Only run on PRs, main branch pushes, or manual trigger
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    
     steps:
-    - uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install Dependencies
+        run: |
+          npm install --no-fund --no-audit
+          cd webview-ui
+          npm install --no-fund --no-audit
+      
+      - name: Lint
+        run: |
+          npm run lint
+      
+      - name: Install Xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+      
+      - name: Run Tests with Xvfb
+        run: |
+          xvfb-run -a npm run test-all
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        cache: 'npm'
+      - name: Build webview
+        run: npm run build-webview
 
-    - name: Install Xvfb
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y xvfb
+      - name: Compile extension
+        run: npm run compile
 
-    - name: Install dependencies
-      run: npm ci
+  release:
+    name: Build and Release Extension
+    needs: test
+    runs-on: ubuntu-latest
+    # Only run on tags or manual trigger
+    if: startsWith(github.ref, 'refs/tags/vscode-v') || github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Determine Version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            # Extract version from tag (remove 'vscode-v' prefix)
+            VERSION="${GITHUB_REF#refs/tags/vscode-v}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Using version: $VERSION"
+      
+      - name: Install Dependencies
+        run: |
+          npm install --no-fund --no-audit
+          cd webview-ui
+          npm install --no-fund --no-audit
+      
+      - name: Update Version
+        run: |
+          sed -i "s/\"version\": \"[0-9]*\.[0-9]*\.[0-9]*\"/\"version\": \"${{ steps.version.outputs.version }}\"/" package.json
+      
+      - name: Install Xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+      
+      - name: Package Extension
+        run: |
+          mkdir -p dist
+          # Use xvfb for compile step in case it launches VS Code
+          xvfb-run -a npm run compile
+          npx @vscode/vsce package --no-dependencies --no-yarn -o dist/goose-vscode-${{ steps.version.outputs.version }}.vsix
+          
+          # Verify the package was created
+          if [ ! -f "dist/goose-vscode-${{ steps.version.outputs.version }}.vsix" ]; then
+            echo "Failed to create the VSIX package"
+            exit 1
+          fi
+      
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/vscode-v')
+        with:
+          name: VS Code Extension v${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          files: dist/*.vsix
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Run linting
-      run: npm run lint
-
-    - name: Run tests with Xvfb
-      run: xvfb-run -a npm run test-all
-
-    - name: Build webview
-      run: npm run build-webview
-
-    - name: Compile extension
-      run: npm run compile 
+      - name: Publish to VS Code Marketplace
+        id: publish_vscode_marketplace
+        if: startsWith(github.ref, 'refs/tags/vscode-v')
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          npx vsce publish --pat $VSCE_PAT 
