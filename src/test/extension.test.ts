@@ -15,7 +15,7 @@ suite('Extension Test Suite', () => {
 		testEnv = setupTestEnvironment();
 		// Stub getBinaryPath to prevent errors when the server tries to start
 		getBinaryPathStub = sinon.stub(require('../utils/binaryPath'), 'getBinaryPath');
-		getBinaryPathStub.callsFake(getTestBinaryPathResolver(testEnv.context));
+		getBinaryPathStub.callsFake(getTestBinaryPathResolver());
 	});
 
 	teardown(() => {

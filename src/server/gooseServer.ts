@@ -107,8 +107,12 @@ export const startGoosed = async (
     let goosedPath = config.getBinaryPath('goosed');
     const port = await findAvailablePort();
 
-    // Use the provided secret key or generate a new one
-    const secretKey = config.secretKey || generateSecretKey();
+    // Use the provided secret key - we no longer generate one internally
+    if (!config.secretKey) {
+        logger.error('No secret key provided to gooseServer');
+        throw new Error('Secret key must be provided by the caller');
+    }
+    const secretKey = config.secretKey;
 
     logger.info(`Starting goosed from: ${goosedPath} on port ${port} in dir ${workingDir}`);
 
@@ -263,29 +267,4 @@ export const startGoosed = async (
         process: goosedProcess,
         secretKey
     };
-};
-
-// Helper function to generate a secure secret key
-function generateSecretKey(): string {
-    // Create a random string of 32 characters for the secret key
-    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let result = '';
-
-    try {
-        // Try to use Node.js crypto
-        const crypto = require('crypto');
-        const randomBytes = crypto.randomBytes(32);
-        for (let i = 0; i < randomBytes.length; i++) {
-            result += chars[randomBytes[i] % chars.length];
-        }
-    } catch (error) {
-        // Fallback to browser crypto
-        const randomValues = new Uint8Array(32);
-        crypto.getRandomValues(randomValues);
-        randomValues.forEach(val => {
-            result += chars[val % chars.length];
-        });
-    }
-
-    return result;
-} 
+}; 

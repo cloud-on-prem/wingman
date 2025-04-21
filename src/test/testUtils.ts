@@ -96,6 +96,9 @@ export const silentLogger = {
 /**
  * Creates a test binary path resolver
  */
-export function getTestBinaryPathResolver(context: ExtensionContext): (binaryName: string) => string {
-    return (binaryName: string) => getBinaryPath(context, binaryName);
+export function getTestBinaryPathResolver(): (binaryName: string) => string {
+    return (binaryName: string) => {
+        // Return a fixed path for testing rather than calling the actual function
+        return `/test/path/to/${binaryName}`;
+    };
 } 

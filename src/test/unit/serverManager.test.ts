@@ -25,7 +25,7 @@ suite('ServerManager Tests', () => {
 
         // Stub binary path resolver
         getBinaryPathStub = sinon.stub(require('../../utils/binaryPath'), 'getBinaryPath');
-        getBinaryPathStub.callsFake(getTestBinaryPathResolver(testEnv.context));
+        getBinaryPathStub.callsFake(getTestBinaryPathResolver());
 
         // Create mock process using Object.create and assign properties
         mockProcess = Object.create(EventEmitter.prototype);

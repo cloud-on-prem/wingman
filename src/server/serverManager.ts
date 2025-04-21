@@ -67,17 +67,11 @@ export class ServerManager {
         const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
         let result = '';
 
-        try {
-            const randomBytes = crypto.randomBytes(32);
-            for (let i = 0; i < randomBytes.length; i++) {
-                result += chars[randomBytes[i] % chars.length];
-            }
-        } catch (error) {
-            // Fallback if crypto fails
-            console.error('Error generating random bytes, using fallback:', error);
-            for (let i = 0; i < 32; i++) {
-                result += chars[Math.floor(Math.random() * chars.length)];
-            }
+        // Use crypto.randomBytes for cryptographically secure random key generation
+        // No fallback - if this fails, we should let the error propagate
+        const randomBytes = crypto.randomBytes(32);
+        for (let i = 0; i < randomBytes.length; i++) {
+            result += chars[randomBytes[i] % chars.length];
         }
 
         return result;
