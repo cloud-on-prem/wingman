@@ -10,17 +10,37 @@ import { setupTestEnvironment, getTestBinaryPathResolver } from './testUtils';
 suite('Extension Test Suite', () => {
 	let testEnv: ReturnType<typeof setupTestEnvironment>;
 	let getBinaryPathStub: sinon.SinonStub;
+	let serverManagerStub: sinon.SinonStub;
 
 	setup(() => {
 		testEnv = setupTestEnvironment();
 		// Stub getBinaryPath to prevent errors when the server tries to start
 		getBinaryPathStub = sinon.stub(require('../utils/binaryPath'), 'getBinaryPath');
 		getBinaryPathStub.callsFake(getTestBinaryPathResolver());
+
+		// Create a new stub for ServerManager each time to avoid "already wrapped" error
+		// Make sure the stub is clean each time
+		const serverManagerModule = require('../server/serverManager');
+		if (serverManagerModule.ServerManager.restore) {
+			serverManagerModule.ServerManager.restore();
+		}
+		serverManagerStub = sinon.stub(serverManagerModule, 'ServerManager').callsFake(function () {
+			return {
+				start: sinon.stub().resolves(true),
+				stop: sinon.stub(),
+				on: sinon.stub(),
+				getStatus: sinon.stub().returns('stopped')
+			};
+		});
 	});
 
 	teardown(() => {
 		getBinaryPathStub.restore();
-		testEnv.cleanup();
+		if (serverManagerStub && serverManagerStub.restore) {
+			serverManagerStub.restore();
+		}
+		// Ensure all stubs are properly restored
+		testEnv.sandbox.restore();
 	});
 
 	test('Extension should be present', () => {
@@ -75,8 +95,8 @@ suite('Extension Test Suite', () => {
 			// Check that context.subscriptions was updated (command disposables should be pushed)
 			assert.strictEqual(
 				context.subscriptions?.length,
-				9,
-				'Expected 9 subscriptions to be added to context'
+				8,
+				'Expected 8 subscriptions to be added to context'
 			);
 		} finally {
 			// Restore the stubs

@@ -539,8 +539,11 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 export function activate(context: vscode.ExtensionContext) {
 	console.log('Activating Goose extension');
 
-	// Create server manager
-	const serverManager = new ServerManager(context);
+	// Create server manager with dependencies (using defaults)
+	const serverManager = new ServerManager(context, {
+		// All dependencies use defaults, but we show the explicit structure
+		// which allows for easier mocking in tests or future customization
+	});
 
 	// Create chat processor
 	const chatProcessor = new ChatProcessor(serverManager);

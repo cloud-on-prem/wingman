@@ -9,6 +9,37 @@ import * as path from 'path';
 import { ChildProcess } from 'child_process';
 import { setupTestEnvironment, silentLogger, getTestBinaryPathResolver } from '../testUtils';
 
+// Create mock ApiClient class that properly extends the actual ApiClient
+class MockApiClient extends EventEmitter {
+    baseUrl: string;
+    secretKey: string;
+    debug: boolean;
+    logger: any;
+    events: EventEmitter;
+
+    constructor(config: any) {
+        super();
+        this.baseUrl = config.baseUrl;
+        this.secretKey = config.secretKey;
+        this.debug = config.debug || false;
+        this.logger = config.logger || { info: console.info, error: console.error };
+        this.events = new EventEmitter();
+
+        // Add mock methods from mockApiClient
+        // We'll assign these in the setup function
+    }
+}
+
+// Helper function to create an API client factory for tests
+function createApiClientFactory(mockApiClientMethods: any) {
+    return function (config: any) {
+        const client = new MockApiClient(config);
+        // Add the mock methods
+        Object.assign(client, mockApiClientMethods);
+        return client;
+    } as any;
+}
+
 suite('ServerManager Tests', () => {
     let serverManager: ServerManager;
     let mockContext: Partial<vscode.ExtensionContext>;
@@ -110,16 +141,13 @@ suite('ServerManager Tests', () => {
                 return emitter;
             })
         };
-        class MockApiClient extends EventEmitter {
-            constructor() {
-                super();
-                Object.assign(this, mockApiClient);
-            }
-        }
-        testEnv.sandbox.stub(require('../../server/apiClient'), 'ApiClient').value(MockApiClient);
 
-        // Create the server manager with silent logger
-        serverManager = new ServerManager(mockContext as vscode.ExtensionContext, startGoosedStub);
+        // Create the server manager with dependencies
+        serverManager = new ServerManager(mockContext as vscode.ExtensionContext, {
+            startGoosed: startGoosedStub,
+            getBinaryPath: (_context, binaryName) => `/test/path/to/${binaryName}`,
+            ApiClient: createApiClientFactory(mockApiClient)
+        });
 
         // Replace the logger with a silent one to prevent console output
         (serverManager as any).logger = silentLogger;
@@ -149,7 +177,7 @@ suite('ServerManager Tests', () => {
     test('should create API client when server starts', async () => {
         await serverManager.start();
         const apiClient = serverManager.getApiClient();
-        assert.ok(apiClient instanceof require('../../server/apiClient').ApiClient, 'ApiClient instance not created');
+        assert.ok(apiClient instanceof MockApiClient, 'ApiClient instance not created');
         sinon.assert.calledOnce(startGoosedStub);
     });
 
@@ -161,33 +189,56 @@ suite('ServerManager Tests', () => {
     });
 
     test('should handle errors during server start', async () => {
-        testEnv.sandbox.stub(serverManager as any, 'getWorkspaceDirectory').throws(new Error('Workspace directory error'));
-        const errorListener = testEnv.sandbox.spy();
-        serverManager.on(ServerEvents.ERROR, errorListener);
+        // Create a new mock ServerManager instance that exposes serverInfo for testing
+        const serverManagerForTest = new ServerManager(mockContext as vscode.ExtensionContext, {
+            startGoosed: startGoosedStub,
+            getBinaryPath: (_context, binaryName) => `/test/path/to/${binaryName}`,
+            ApiClient: createApiClientFactory(mockApiClient)
+        });
 
-        const result = await serverManager.start();
+        // Stub the workspace directory method
+        testEnv.sandbox.stub(serverManagerForTest as any, 'getWorkspaceDirectory').throws(new Error('Workspace directory error'));
+        const errorListener = testEnv.sandbox.spy();
+        serverManagerForTest.on(ServerEvents.ERROR, errorListener);
+
+        const result = await serverManagerForTest.start();
 
         assert.strictEqual(result, false, 'Server start should fail');
-        assert.strictEqual(serverManager.getStatus(), ServerStatus.ERROR, 'Status should be ERROR');
+        assert.strictEqual(serverManagerForTest.getStatus(), ServerStatus.ERROR, 'Status should be ERROR');
         sinon.assert.calledOnce(errorListener);
         sinon.assert.notCalled(startGoosedStub);
     });
 
     test('should handle server start failure gracefully', async () => {
-        startGoosedStub.rejects(new Error('Test error from injected stub'));
-        const errorListener = testEnv.sandbox.spy();
-        serverManager.on(ServerEvents.ERROR, errorListener);
+        // Create a new start failure stub
+        const failureStub = testEnv.sandbox.stub<Parameters<typeof actualGooseServer.startGoosed>, Promise<actualGooseServer.GooseServerInfo>>();
+        failureStub.rejects(new Error('Test error from injected stub'));
 
-        const result = await serverManager.start();
+        // Create a new server manager with the failure stub
+        const failingServerManager = new ServerManager(mockContext as vscode.ExtensionContext, {
+            startGoosed: failureStub,
+            getBinaryPath: (_context, binaryName) => `/test/path/to/${binaryName}`,
+            ApiClient: createApiClientFactory(mockApiClient)
+        });
+
+        const errorListener = testEnv.sandbox.spy();
+        failingServerManager.on(ServerEvents.ERROR, errorListener);
+
+        const result = await failingServerManager.start();
 
         assert.strictEqual(result, false, 'Server start should fail due to injected stub rejection');
-        assert.strictEqual(serverManager.getStatus(), ServerStatus.ERROR, 'Status should be ERROR');
+        assert.strictEqual(failingServerManager.getStatus(), ServerStatus.ERROR, 'Status should be ERROR');
         sinon.assert.calledOnce(errorListener);
-        sinon.assert.calledOnce(startGoosedStub);
+        sinon.assert.calledOnce(failureStub);
     });
 
     test('should handle server process exit', async () => {
+        // For the process tests, we need to manually set the serverInfo property
         await serverManager.start();
+
+        // Verify we have a serverInfo object
+        const serverInfo = (serverManager as any).serverInfo;
+        assert.ok(serverInfo, 'serverInfo should exist after starting');
 
         const exitListener = testEnv.sandbox.spy();
         serverManager.on(ServerEvents.SERVER_EXIT, exitListener);
@@ -195,8 +246,8 @@ suite('ServerManager Tests', () => {
         const statusChangeListener = testEnv.sandbox.spy();
         serverManager.on(ServerEvents.STATUS_CHANGE, statusChangeListener);
 
-        const serverProcess = (serverManager as any).serverInfo.process;
-        serverProcess.emit('close', 0);
+        // Trigger the close event on the mock process
+        serverInfo.process.emit('close', 0);
 
         sinon.assert.calledWith(exitListener, 0);
         assert.strictEqual(serverManager.getStatus(), ServerStatus.STOPPED);
@@ -205,14 +256,18 @@ suite('ServerManager Tests', () => {
     test('should handle server process crash', async () => {
         await serverManager.start();
 
+        // Verify we have a serverInfo object
+        const serverInfo = (serverManager as any).serverInfo;
+        assert.ok(serverInfo, 'serverInfo should exist after starting');
+
         const exitListener = testEnv.sandbox.spy();
         serverManager.on(ServerEvents.SERVER_EXIT, exitListener);
 
         const statusChangeListener = testEnv.sandbox.spy();
         serverManager.on(ServerEvents.STATUS_CHANGE, statusChangeListener);
 
-        const serverProcess = (serverManager as any).serverInfo.process;
-        serverProcess.emit('close', 1);
+        // Trigger the close event with an error code
+        serverInfo.process.emit('close', 1);
 
         sinon.assert.calledWith(exitListener, 1);
         assert.strictEqual(serverManager.getStatus(), ServerStatus.STOPPED);
@@ -221,14 +276,18 @@ suite('ServerManager Tests', () => {
     test('should handle server process exit with null code', async () => {
         await serverManager.start();
 
+        // Verify we have a serverInfo object
+        const serverInfo = (serverManager as any).serverInfo;
+        assert.ok(serverInfo, 'serverInfo should exist after starting');
+
         const exitListener = testEnv.sandbox.spy();
         serverManager.on(ServerEvents.SERVER_EXIT, exitListener);
 
         const statusChangeListener = testEnv.sandbox.spy();
         serverManager.on(ServerEvents.STATUS_CHANGE, statusChangeListener);
 
-        const serverProcess = (serverManager as any).serverInfo.process;
-        serverProcess.emit('close', null);
+        // Trigger the close event with null code
+        serverInfo.process.emit('close', null);
 
         sinon.assert.calledWith(exitListener, null);
         assert.strictEqual(serverManager.getStatus(), ServerStatus.STOPPED);

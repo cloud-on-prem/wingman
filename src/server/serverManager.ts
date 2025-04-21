@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
 import { EventEmitter } from 'events';
 import { GooseServerConfig, GooseServerInfo, startGoosed as actualStartGoosed } from './gooseServer';
-import { ApiClient } from './apiClient';
-import { getBinaryPath } from '../utils/binaryPath';
+import { ApiClient as ActualApiClient } from './apiClient';
+import { getBinaryPath as actualGetBinaryPath } from '../utils/binaryPath';
 import { Message } from 'src/types';
 import * as cp from 'child_process';
 import * as crypto from 'crypto';
@@ -30,25 +30,49 @@ export enum ServerEvents {
 // Define the type for the startGoosed function
 type StartGoosedFn = typeof actualStartGoosed;
 
+// Define the type for the getBinaryPath function
+type GetBinaryPathFn = typeof actualGetBinaryPath;
+
+// Define the type for the ApiClient constructor
+type ApiClientConstructor = typeof ActualApiClient;
+
+/**
+ * Interface for dependencies that can be injected into ServerManager
+ */
+export interface ServerManagerDependencies {
+    startGoosed?: StartGoosedFn;
+    getBinaryPath?: GetBinaryPathFn;
+    ApiClient?: ApiClientConstructor;
+}
+
 /**
  * Server manager for the VSCode extension
  */
 export class ServerManager {
     private serverInfo: GooseServerInfo | null = null;
-    private apiClient: ApiClient | null = null;
+    private apiClient: ActualApiClient | null = null;
     private status: ServerStatus = ServerStatus.STOPPED;
     private eventEmitter: EventEmitter;
     private context: vscode.ExtensionContext;
     private extensionEvents: EventEmitter;
     private secretKey: string;
     private serverProcess: cp.ChildProcess | null = null;
-    private startGoosedFn: StartGoosedFn; // Store the function to use
+    private startGoosedFn: StartGoosedFn;
+    private getBinaryPathFn: GetBinaryPathFn;
+    private ApiClientConstructor: ApiClientConstructor;
 
-    constructor(context: vscode.ExtensionContext, startGoosedDependency: StartGoosedFn = actualStartGoosed) {
+    constructor(
+        context: vscode.ExtensionContext,
+        dependencies: ServerManagerDependencies = {}
+    ) {
         this.context = context;
         this.eventEmitter = new EventEmitter();
         this.extensionEvents = new EventEmitter();
-        this.startGoosedFn = startGoosedDependency; // Use injected or default function
+
+        // Use injected or default dependencies
+        this.startGoosedFn = dependencies.startGoosed || actualStartGoosed;
+        this.getBinaryPathFn = dependencies.getBinaryPath || actualGetBinaryPath;
+        this.ApiClientConstructor = dependencies.ApiClient || ActualApiClient;
 
         // Generate a new secret key on initialization
         this.secretKey = this.generateSecretKey();
@@ -101,7 +125,7 @@ export class ServerManager {
             // Configure and start the server
             const serverConfig: GooseServerConfig = {
                 workingDir: this.getWorkspaceDirectory(),
-                getBinaryPath: (binaryName: string) => getBinaryPath(this.context, binaryName),
+                getBinaryPath: (binaryName: string) => this.getBinaryPathFn(this.context, binaryName),
                 logger: {
                     info: (message: string, ...args: any[]) => console.info(`[GooseServer] ${message}`, ...args),
                     error: (message: string, ...args: any[]) => console.error(`[GooseServer] ${message}`, ...args)
@@ -121,7 +145,7 @@ export class ServerManager {
             });
 
             // Create API client for the server
-            this.apiClient = new ApiClient({
+            this.apiClient = new this.ApiClientConstructor({
                 baseUrl: `http://127.0.0.1:${this.serverInfo.port}`,
                 secretKey: this.secretKey,
                 debug: true,
@@ -138,6 +162,21 @@ export class ServerManager {
             return true;
         } catch (error) {
             console.error('Error starting Goose server:', error);
+
+            // Check for specific binary not found error
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            if (errorMessage.includes('find the') && errorMessage.includes('executable')) {
+                // The error message from getBinaryPath already includes instructions and shows a VS Code notification
+                // So we don't need to show another message, just set the status to ERROR
+                console.error('Failed to find Goose Desktop installation. Please install it from https://block.github.io/goose/');
+            } else {
+                // For other errors, show a generic error message
+                vscode.window.showErrorMessage(
+                    `Failed to start Goose server: ${errorMessage}. Please check logs for details.`,
+                    { modal: false }
+                );
+            }
+
             this.setStatus(ServerStatus.ERROR);
             this.eventEmitter.emit(ServerEvents.ERROR, error);
             return false;
@@ -250,7 +289,7 @@ export class ServerManager {
     /**
      * Get the API client
      */
-    public getApiClient(): ApiClient | null {
+    public getApiClient(): ActualApiClient | null {
         return this.apiClient;
     }
 
@@ -350,7 +389,7 @@ export class ServerManager {
 
     private getBinaryPath(): string {
         // Use the utility function to get the binary path
-        return getBinaryPath(this.context, 'goosed');
+        return this.getBinaryPathFn(this.context, 'goosed');
     }
 
     private getWorkspaceDirectory(): string {

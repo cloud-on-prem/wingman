@@ -9,6 +9,7 @@ import { ExtensionContext } from 'vscode';
  * @param _context The VSCode extension context (currently unused but kept for potential future use)
  * @param binaryName The name of the binary to find (e.g., 'goosed')
  * @returns The absolute path to the binary
+ * @throws Error if the binary cannot be found, with a user-friendly message on how to install Goose Desktop
  */
 export function getBinaryPath(_context: ExtensionContext, binaryName: string): string {
     const platform = process.platform;
@@ -119,8 +120,29 @@ export function getBinaryPath(_context: ExtensionContext, binaryName: string): s
     }
 
     // If we get here, we couldn't find the binary
-    const errorMsg = `Could not find the '${executableName}' binary. Please ensure the Goose Desktop application is installed correctly in a standard location. Checked paths: ${possiblePaths.join(', ')}`;
-    console.error(`[Goose Ext] ${errorMsg}`);
-    vscode.window.showErrorMessage(errorMsg); // Show error to the user
-    throw new Error(errorMsg);
+    let errorMessage = `Could not find the ${binaryName} executable. Please ensure Goose Desktop is installed.`;
+
+    // Create a more helpful platform-specific message
+    let installMessage = '';
+    if (platform === 'darwin') {
+        installMessage = 'Please download and install Goose Desktop from https://block.github.io/goose/ and ensure it is installed in /Applications or ~/Applications.';
+    } else if (platform === 'win32') {
+        installMessage = 'Please download and install Goose Desktop from https://block.github.io/goose/ and ensure it completes installation to your Program Files or Local AppData folder.';
+    } else {
+        installMessage = 'Please download and install Goose Desktop from https://block.github.io/goose/ following the Linux installation instructions.';
+    }
+
+    // Show an error message to the user with instructions
+    vscode.window.showErrorMessage(
+        `${errorMessage} ${installMessage}`,
+        { modal: true },
+        { title: 'Download Goose', id: 'download' }
+    ).then(selection => {
+        if (selection && selection.id === 'download') {
+            vscode.env.openExternal(vscode.Uri.parse('https://block.github.io/goose/'));
+        }
+    });
+
+    console.error(`[Goose Ext] ${errorMessage} Checked paths: ${possiblePaths.join(', ')}`);
+    throw new Error(`${errorMessage} ${installMessage}`);
 } 
