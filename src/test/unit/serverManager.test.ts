@@ -50,6 +50,7 @@ suite('ServerManager Tests', () => {
     let mockProcess: any;
     let getBinaryPathStub: sinon.SinonStub;
     let testEnv: ReturnType<typeof setupTestEnvironment>;
+    let configReaderStub: sinon.SinonStub;
 
     setup(() => {
         testEnv = setupTestEnvironment();
@@ -58,6 +59,13 @@ suite('ServerManager Tests', () => {
         // Stub binary path resolver
         getBinaryPathStub = sinon.stub(require('../../utils/binaryPath'), 'getBinaryPath');
         getBinaryPathStub.callsFake(getTestBinaryPathResolver());
+        
+        // Stub configReader to ensure tests don't rely on actual config files
+        configReaderStub = testEnv.sandbox.stub(configReader, 'readGooseConfig');
+        configReaderStub.returns({
+            provider: 'test-provider',
+            model: 'test-model'
+        });
 
         // Create mock process using Object.create and assign properties
         mockProcess = Object.create(EventEmitter.prototype);
@@ -309,13 +317,7 @@ suite('ServerManager Tests', () => {
 
     // Tests for configReader integration
     test('should load provider and model from config', async () => {
-        // Stub the configReader to return a valid configuration
-        const readConfigStub = testEnv.sandbox.stub(configReader, 'readGooseConfig');
-        readConfigStub.returns({
-            provider: 'test-provider',
-            model: 'test-model'
-        });
-
+        // The global stub is already set up in the setup function
         await serverManager.start();
 
         // Verify that the provider and model from config are passed to the API client
@@ -323,9 +325,10 @@ suite('ServerManager Tests', () => {
     });
 
     test('should fail to start when GOOSE_PROVIDER is missing', async () => {
-        // Stub the configReader to return a configuration with missing provider
-        const readConfigStub = testEnv.sandbox.stub(configReader, 'readGooseConfig');
-        readConfigStub.returns({
+        // Update the global stub for this test
+        configReaderStub.restore(); // Remove the global stub first
+        configReaderStub = testEnv.sandbox.stub(configReader, 'readGooseConfig');
+        configReaderStub.returns({
             provider: null,
             model: 'test-model'
         });
@@ -350,9 +353,10 @@ suite('ServerManager Tests', () => {
     });
 
     test('should fail to start when GOOSE_MODEL is missing', async () => {
-        // Stub the configReader to return a configuration with missing model
-        const readConfigStub = testEnv.sandbox.stub(configReader, 'readGooseConfig');
-        readConfigStub.returns({
+        // Update the global stub for this test
+        configReaderStub.restore(); // Remove the global stub first
+        configReaderStub = testEnv.sandbox.stub(configReader, 'readGooseConfig');
+        configReaderStub.returns({
             provider: 'test-provider',
             model: null
         });
@@ -377,9 +381,10 @@ suite('ServerManager Tests', () => {
     });
 
     test('should re-read config file after stop and restart', async () => {
-        // First read - valid config
-        const readConfigStub = testEnv.sandbox.stub(configReader, 'readGooseConfig');
-        readConfigStub.onFirstCall().returns({
+        // Update the global stub for this test
+        configReaderStub.restore(); // Remove the global stub first
+        configReaderStub = testEnv.sandbox.stub(configReader, 'readGooseConfig');
+        configReaderStub.onFirstCall().returns({
             provider: 'first-provider',
             model: 'first-model'
         });
@@ -396,7 +401,7 @@ suite('ServerManager Tests', () => {
         await serverManager.stop();
         
         // Change to new config for next read
-        readConfigStub.onSecondCall().returns({
+        configReaderStub.onSecondCall().returns({
             provider: 'second-provider',
             model: 'second-model'
         });
