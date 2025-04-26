@@ -1,25 +1,43 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { CodeReferences } from '../codeReferences/CodeReferences';
-import { CodeReference } from '../../types';
+import { CodeReference } from '../../types/index';
+import './ChatInput.css';
 
+// Interface for prepended code data
+interface PrependedCode {
+    content: string;
+    fileName: string;
+    languageId: string;
+    startLine: number; 
+    endLine: number;   
+}
+
+// Remove props related to the old prepended code banner
 interface ChatInputProps {
     inputMessage: string;
-    codeReferences: CodeReference[];
+    codeReferences: CodeReference[]; // This will now include temporary prepended refs
     isLoading: boolean;
+    // prependedCode: PrependedCode | null; 
+    // hasPrependedCode: boolean; 
     onInputChange: (value: string) => void;
     onSendMessage: () => void;
     onStopGeneration: () => void;
-    onRemoveCodeReference: (id: string) => void;
+    onRemoveCodeReference: (id: string) => void; // Handles removing both real and temp refs
+    // onClearPrependedCode: () => void; 
 }
 
 export const ChatInput: React.FC<ChatInputProps> = ({
     inputMessage,
-    codeReferences,
+    codeReferences, // Receives the combined list
     isLoading,
+    // Remove unused props
+    // prependedCode, 
+    // hasPrependedCode, 
     onInputChange,
     onSendMessage,
     onStopGeneration,
-    onRemoveCodeReference
+    onRemoveCodeReference, // This function now handles removing the temporary chip too
+    // onClearPrependedCode 
 }) => {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const [wasLoading, setWasLoading] = useState(false);
@@ -74,10 +92,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
     return (
         <div className="input-container">
+            {/* Show code references */}
             <CodeReferences
                 codeReferences={codeReferences}
-                onRemoveReference={onRemoveCodeReference}
+                onRemoveReference={onRemoveCodeReference} // Pass the remove handler
             />
+            
+            {/* Remove the old prepended code indicator banner */}
 
             <div className="input-row">
                 <textarea
@@ -85,8 +106,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                     value={inputMessage}
                     onChange={(e) => onInputChange(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="Ask Goose a question..."
+                    // Placeholder logic might need adjustment if we want different text when a temp ref exists
+                    placeholder={"Ask Goose a question..."} 
                     disabled={isLoading}
+                    // Remove conditional class based on hasPrependedCode
+                    // className={hasPrependedCode ? 'has-prepended-code' : ''} 
                 />
 
                 <button
@@ -99,4 +123,4 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             </div>
         </div>
     );
-}; 
+};

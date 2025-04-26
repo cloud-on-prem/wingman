@@ -22,7 +22,7 @@ sequenceDiagram
     participant GoosedAPI as `goosed` Process API
     participant AIBackend as Goose AI Backend
 
-    Note over User, VSCodeUI: User selects code in the editor
+    Note over User, VSCodeUI: User may or may not select code in editor
 
     User->>VSCodeUI: Right-click -> "Ask Goose about this code" <br/> OR <br/> Press Cmd/Ctrl+Shift+G
     activate VSCodeUI
@@ -32,22 +32,44 @@ sequenceDiagram
     activate ExtHost
 
     Note over ExtHost: (extension.ts:activate registers command)
-    Note over ExtHost: CodeReferenceManager gets selected text/range
+    Note over ExtHost: Checks if text is selected and selection size
 
-    ExtHost->>ChatWebview: Post message (ADD_CODE_REFERENCE, focus)
+    alt No selection
+        ExtHost->>ExtHost: Get entire file content
+        ExtHost->>ChatWebview: Post message (ADD_CODE_REFERENCE, focus)
+        Note over ChatWebview: Webview UI adds code reference chip for whole file
+    else Selection >= 100 lines
+        ExtHost->>ExtHost: CodeReferenceManager gets selected text/range
+        ExtHost->>ChatWebview: Post message (ADD_CODE_REFERENCE, focus)
+        Note over ChatWebview: Webview UI adds code reference chip for selection
+    else Selection < 100 lines
+        ExtHost->>ChatWebview: Post message (PREPARE_MESSAGE_WITH_CODE, focus)
+        Note over ChatWebview: Webview stores code for next message,<br/>no visible chip added
+    end
+
     activate ChatWebview
-    Note over ChatWebview: Webview UI adds code reference chip,<br/>focuses input box
+    Note over ChatWebview: Chat input is focused
 
     User->>ChatWebview: Types question and presses Enter
-    ChatWebview->>ExtHost: Post message (SEND_CHAT_MESSAGE) with text & code ref
+
+    alt With code reference chip (No selection or >= 100 lines)
+        ChatWebview->>ExtHost: Post message (SEND_CHAT_MESSAGE) with text & code ref
+    else With prepended code (< 100 lines)
+        ChatWebview->>ExtHost: Post message (SEND_CHAT_MESSAGE) with text & prepended code
+    end
+    
     deactivate ChatWebview
     activate ExtHost
 
     Note over ExtHost: (GooseViewProvider receives message)
     ExtHost->>ExtHost: ChatProcessor prepares request
     activate ExtHost #LightSkyBlue
-
-    ExtHost->>GoosedAPI: POST /chat (stream request with message, code ref, session)
+    alt With code reference chip
+        ExtHost->>GoosedAPI: POST /chat (stream request with message, code ref, session)
+    else With prepended code
+        Note over ExtHost: Format code as markdown in message
+        ExtHost->>GoosedAPI: POST /chat (stream request with formatted message, session)
+    end
     deactivate ExtHost #LightSkyBlue
     activate GoosedAPI
 

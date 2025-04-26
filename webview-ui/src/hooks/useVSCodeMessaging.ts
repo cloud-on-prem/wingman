@@ -28,16 +28,41 @@ function isTextContent(content: MessageContent): content is TextContent {
 // Unused type, renamed with underscore prefix
 type _MessageHandler = (message: any) => void;
 
+// Interface for prepended code data
+interface PrependedCode {
+    content: string;
+    fileName: string;
+    languageId: string;
+    startLine: number; // Add start line
+    endLine: number;   // Add end line
+}
+
 interface UseVSCodeMessagingResult {
     messages: ExtendedMessage[];
     serverStatus: string;
     isLoading: boolean;
     intermediateText: string | null;
     currentMessageId: string | null;
-    codeReferences: any[]; // TODO: Import proper type
+    codeReferences: any[]; // Using any for now, should import CodeReference type
+    // Remove prependedCode state, handle via codeReferences
+    // prependedCode: PrependedCode | null; 
+    // hasPrependedCode: boolean; 
     sendChatMessage: (text: string, refs: any[], sessionId: string | null) => void;
     stopGeneration: () => void;
     restartServer: () => void;
+    // Remove clearPrependedCode as it's no longer needed
+    // clearPrependedCode: () => void; 
+}
+
+// Define a type for the temporary reference used for prepended code
+interface TemporaryPrependedRef {
+    id: string;
+    isPrepended: true; // Flag to identify this type
+    content: string;
+    fileName: string;
+    languageId: string;
+    startLine: number;
+    endLine: number;
 }
 
 export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
@@ -46,8 +71,15 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [currentMessageId, setCurrentMessageId] = useState<string | null>(null);
     const [intermediateText, setIntermediateText] = useState<string | null>(null);
-    const [codeReferences, setCodeReferences] = useState<any[]>([]);
+    // State now holds both regular CodeReferences and TemporaryPrependedRef
+    const [codeReferences, setCodeReferences] = useState<(any | TemporaryPrependedRef)[]>([]); 
+    // Remove prependedCode state
+    // const [prependedCode, setPrependedCode] = useState<PrependedCode | null>(null); 
     const [processedMessageIds, setProcessedMessageIds] = useState<Set<string>>(new Set());
+    
+    // Remove derived state and clear function
+    // const hasPrependedCode = prependedCode !== null;
+    // const clearPrependedCode = useCallback(() => { ... }, [prependedCode]);
 
     const vscode = getVSCodeAPI();
 
@@ -136,24 +168,49 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
         // Add the ID to processed set to prevent duplicates if we get it back from the extension
         setProcessedMessageIds(prev => new Set(prev).add(messageId));
 
-        // Send message to extension
-        vscode.postMessage({
+        // Find if there's a temporary prepended reference in the state
+        const tempPrependedRef = codeReferences.find(ref => ref.isPrepended === true) as TemporaryPrependedRef | undefined;
+        
+        // Filter out the temporary reference from the list sent to the backend as 'codeReferences'
+        const actualCodeReferences = codeReferences.filter(ref => ref.isPrepended !== true);
+
+        // Prepare message payload for the extension
+        // Use 'let' so we can modify it
+        let messagePayload: any = {
             command: MessageType.SEND_CHAT_MESSAGE,
             text: text,
-            codeReferences: refs,
+            codeReferences: actualCodeReferences, // Send only actual references
             messageId: messageId,
             sessionId: sessionId
-        });
+        };
+
+        // If a temporary prepended reference exists, extract its data for the 'prependedCode' field
+        if (tempPrependedRef) {
+            console.log('DEBUG: Found temporary prepended reference, adding its data to payload.');
+            messagePayload.prependedCode = {
+                content: tempPrependedRef.content,
+                fileName: tempPrependedRef.fileName,
+                languageId: tempPrependedRef.languageId,
+                startLine: tempPrependedRef.startLine,
+                endLine: tempPrependedRef.endLine
+            };
+            // Add UI text indicating prepended code was included (optional, could be removed if chip is enough)
+            // content.push({ type: 'text', text: `With code from ${tempPrependedRef.fileName}` }); 
+        } else {
+             console.log('DEBUG: No temporary prepended reference found.');
+        }
+
+        // Send message to extension
+        vscode.postMessage(messagePayload);
 
         setIsLoading(true);
         setCurrentMessageId(messageId);
         setIntermediateText(null); // Clear any previous intermediate text
 
-        // Clear code references after sending
-        if (refs.length > 0) {
-            setCodeReferences([]);
-        }
-    }, [vscode, safeguardedSetMessages, serverStatus]);
+        // Clear ALL code references (including the temporary one) from UI state after sending
+        setCodeReferences([]); 
+        
+    }, [vscode, safeguardedSetMessages, serverStatus, codeReferences]); // Use codeReferences in dependency array
 
     // Stop AI generation
     const stopGeneration = useCallback(() => {
@@ -190,11 +247,11 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
                             // Process intermediate content (thinking or tool usage)
                             if (message.message.content && Array.isArray(message.message.content)) {
                                 if (process.env.NODE_ENV === 'development') {
-                                    console.debug('Processing message content:', 
+                                    console.debug('Processing message content:',
                                         JSON.stringify(message.message.content.map((c: any) => ({ type: c.type })))
                                     );
                                 }
-                                
+
                                 // Look for thinking content first
                                 const thinkingContent = message.message.content.find(
                                     (item: any) => item.type === 'thinking' || item.type === 'redacted_thinking'
@@ -202,33 +259,33 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
 
                                 if (thinkingContent && 'thinking' in thinkingContent) {
                                     setIntermediateText(thinkingContent.thinking);
-                                    
+
                                     if (process.env.NODE_ENV === 'development') {
                                         console.debug('Updated intermediate text from thinking:', thinkingContent.thinking);
                                     }
-                                    
+
                                     return; // Don't add thinking messages to the main message list
                                 }
-                                
+
                                 // If no thinking content, check for tool requests
                                 const toolRequestContent = message.message.content.find(
                                     (item: any) => item.type === 'toolRequest'
                                 );
-                                
+
                                 if (toolRequestContent) {
                                     const formattedText = formatIntermediateContent(toolRequestContent);
                                     setIntermediateText(formattedText);
-                                    
+
                                     if (process.env.NODE_ENV === 'development') {
                                         console.debug('Updated intermediate text from tool request:', formattedText);
                                     }
-                                    
+
                                     return; // Don't add tool request messages to the main message list
                                 }
                             }
                         } catch (error) {
                             console.error('Error processing message content:', error);
-                            
+
                             // Fallback behavior - show generic message
                             setIntermediateText('Processing your request...');
                         }
@@ -348,10 +405,28 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
                         // so we don't need to create a separate error message
                     }
                     break;
+                case MessageType.PREPARE_MESSAGE_WITH_CODE:
+                    if (message.payload) {
+                        console.log('Received PREPARE_MESSAGE_WITH_CODE, creating temporary reference:', message.payload.fileName);
+                        // Create a temporary reference object and add it to the codeReferences state
+                        const tempRef: TemporaryPrependedRef = {
+                            id: `prepended_${Date.now()}`, // Unique ID for the temporary item
+                            isPrepended: true,
+                            content: message.payload.content,
+                            fileName: message.payload.fileName,
+                            languageId: message.payload.languageId,
+                            startLine: message.payload.startLine,
+                            endLine: message.payload.endLine
+                        };
+                        // Replace existing references/prepended code with this new one
+                        setCodeReferences([tempRef]); 
+                    }
+                    break;
                 case MessageType.ADD_CODE_REFERENCE:
                     if (message.codeReference) {
-                        console.log('Adding code reference from selection:', message.codeReference);
-                        setCodeReferences(prev => [...prev, message.codeReference]);
+                        console.log('Adding code reference from selection:', message.codeReference.fileName);
+                        // Ensure no temporary prepended ref exists when adding a real one
+                        setCodeReferences(prev => [...prev.filter(ref => ref.isPrepended !== true), message.codeReference]);
                     }
                     break;
                 case MessageType.CODE_REFERENCE:
@@ -367,9 +442,9 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
                     break;
                 case MessageType.SESSION_LOADED:
                     console.log('Session loaded with ID:', message.sessionId);
-
-                    // Reset all state for the new session
-                    setCodeReferences([]);
+                    
+                    // Clear any prepended code/references when switching sessions
+                    setCodeReferences([]); 
                     setCurrentMessageId(null);
                     setIntermediateText(null);
                     setIsLoading(false);
@@ -439,8 +514,12 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
         intermediateText,
         currentMessageId,
         codeReferences,
+        // Remove prependedCode related exports
+        // prependedCode, 
+        // hasPrependedCode, 
         sendChatMessage,
         stopGeneration,
-        restartServer
+        restartServer,
+        // clearPrependedCode 
     };
 };

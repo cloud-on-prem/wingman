@@ -27,9 +27,13 @@ const App: React.FC = () => {
         isLoading,
         intermediateText,
         codeReferences,
+        // Remove prependedCode related imports
+        // prependedCode, 
+        // hasPrependedCode, 
         sendChatMessage,
         stopGeneration,
-        restartServer
+        restartServer,
+        // clearPrependedCode 
     } = useVSCodeMessaging();
 
     // Log messages when they change - with error handling
@@ -75,8 +79,8 @@ const App: React.FC = () => {
 
         // Collect all text content
         const textContent = message.content
-            .filter(item => item.type === 'text' && 'text' in item && item.text && item.text.trim() !== '')
-            .map(item => 'text' in item ? item.text : '')
+            .filter((item: any) => item.type === 'text' && 'text' in item && item.text && item.text.trim() !== '')
+            .map((item: any) => 'text' in item ? item.text : '')
             .join('\n\n');
 
         if (textContent) {
@@ -164,10 +168,15 @@ const App: React.FC = () => {
                 inputMessage={inputMessage}
                 codeReferences={codeReferences}
                 isLoading={isLoading}
+                // Remove prependedCode related props
+                // prependedCode={prependedCode} 
+                // hasPrependedCode={hasPrependedCode} 
                 onInputChange={setInputMessage}
                 onSendMessage={handleSendMessage}
                 onStopGeneration={stopGeneration}
                 onRemoveCodeReference={handleRemoveCodeReference}
+                // Remove onClearPrependedCode prop
+                // onClearPrependedCode={clearPrependedCode} 
             />
         </div>
     );
