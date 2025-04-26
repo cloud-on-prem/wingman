@@ -8,6 +8,7 @@ import * as actualGooseServer from '../../server/gooseServer';
 import * as path from 'path';
 import { ChildProcess } from 'child_process';
 import { setupTestEnvironment, silentLogger, getTestBinaryPathResolver } from '../testUtils';
+import * as configReader from '../../utils/configReader';
 
 // Create mock ApiClient class that properly extends the actual ApiClient
 class MockApiClient extends EventEmitter {
@@ -305,4 +306,105 @@ suite('ServerManager Tests', () => {
         sinon.assert.notCalled(exitListener);
         assert.strictEqual(serverManager.getStatus(), ServerStatus.STOPPED);
     });
-}); 
+
+    // Tests for configReader integration
+    test('should load provider and model from config', async () => {
+        // Stub the configReader to return a valid configuration
+        const readConfigStub = testEnv.sandbox.stub(configReader, 'readGooseConfig');
+        readConfigStub.returns({
+            provider: 'test-provider',
+            model: 'test-model'
+        });
+
+        await serverManager.start();
+
+        // Verify that the provider and model from config are passed to the API client
+        sinon.assert.calledWith(mockApiClient.createAgent, 'test-provider', 'test-model', sinon.match.any);
+    });
+
+    test('should fail to start when GOOSE_PROVIDER is missing', async () => {
+        // Stub the configReader to return a configuration with missing provider
+        const readConfigStub = testEnv.sandbox.stub(configReader, 'readGooseConfig');
+        readConfigStub.returns({
+            provider: null,
+            model: 'test-model'
+        });
+
+        const showErrorMessageStub = testEnv.sandbox.stub(vscode.window, 'showErrorMessage');
+        const errorListener = testEnv.sandbox.spy();
+        serverManager.on(ServerEvents.ERROR, errorListener);
+
+        const result = await serverManager.start();
+
+        // Verify the server fails to start
+        assert.strictEqual(result, false, 'Server should fail to start with missing provider');
+        assert.strictEqual(serverManager.getStatus(), ServerStatus.ERROR);
+        
+        // Verify error is shown to user
+        sinon.assert.calledOnce(showErrorMessageStub);
+        sinon.assert.calledOnce(errorListener);
+        
+        // Verify the error message mentions the missing key
+        sinon.assert.calledWith(showErrorMessageStub, 
+            sinon.match.string.and(sinon.match('GOOSE_PROVIDER')));
+    });
+
+    test('should fail to start when GOOSE_MODEL is missing', async () => {
+        // Stub the configReader to return a configuration with missing model
+        const readConfigStub = testEnv.sandbox.stub(configReader, 'readGooseConfig');
+        readConfigStub.returns({
+            provider: 'test-provider',
+            model: null
+        });
+
+        const showErrorMessageStub = testEnv.sandbox.stub(vscode.window, 'showErrorMessage');
+        const errorListener = testEnv.sandbox.spy();
+        serverManager.on(ServerEvents.ERROR, errorListener);
+
+        const result = await serverManager.start();
+
+        // Verify the server fails to start
+        assert.strictEqual(result, false, 'Server should fail to start with missing model');
+        assert.strictEqual(serverManager.getStatus(), ServerStatus.ERROR);
+        
+        // Verify error is shown to user
+        sinon.assert.calledOnce(showErrorMessageStub);
+        sinon.assert.calledOnce(errorListener);
+        
+        // Verify the error message mentions the missing key
+        sinon.assert.calledWith(showErrorMessageStub, 
+            sinon.match.string.and(sinon.match('GOOSE_MODEL')));
+    });
+
+    test('should re-read config file after stop and restart', async () => {
+        // First read - valid config
+        const readConfigStub = testEnv.sandbox.stub(configReader, 'readGooseConfig');
+        readConfigStub.onFirstCall().returns({
+            provider: 'first-provider',
+            model: 'first-model'
+        });
+
+        await serverManager.start();
+        
+        // Verify first provider/model used
+        sinon.assert.calledWith(mockApiClient.createAgent, 'first-provider', 'first-model', sinon.match.any);
+        
+        // Reset call history for next verification
+        mockApiClient.createAgent.resetHistory();
+        
+        // Stop server
+        await serverManager.stop();
+        
+        // Change to new config for next read
+        readConfigStub.onSecondCall().returns({
+            provider: 'second-provider',
+            model: 'second-model'
+        });
+        
+        // Restart server - should read new config
+        await serverManager.start();
+        
+        // Verify second provider/model used
+        sinon.assert.calledWith(mockApiClient.createAgent, 'second-provider', 'second-model', sinon.match.any);
+    });
+});
