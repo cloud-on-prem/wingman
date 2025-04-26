@@ -7,6 +7,7 @@ import { Message } from 'src/types';
 import * as cp from 'child_process';
 import * as crypto from 'crypto';
 import { DefaultLogger, getLogger, LogLevel, Logger } from '../utils/logging';
+import { readGooseConfig } from '../utils/configReader';
 
 // Get a logger instance for the ServerManager
 const logger = getLogger('ServerManager');
@@ -66,6 +67,9 @@ export class ServerManager {
     private getBinaryPathFn: GetBinaryPathFn;
     private ApiClientConstructor: ApiClientConstructor;
     private logger: Logger;
+    private gooseProvider: string | null = null;
+    private gooseModel: string | null = null;
+    private configLoadAttempted: boolean = false;
 
     constructor(
         context: vscode.ExtensionContext,
@@ -116,6 +120,29 @@ export class ServerManager {
             this.logger.info('Server is already running or starting');
             return false;
         }
+
+        // --- Load Configuration ---
+        if (!this.configLoadAttempted) { // Attempt loading only once per instance lifecycle or restart
+             const config = readGooseConfig();
+             this.gooseProvider = config.provider;
+             this.gooseModel = config.model;
+             this.configLoadAttempted = true; // Mark as attempted
+
+             // --- Validate Configuration ---
+             if (!this.gooseProvider || !this.gooseModel) {
+                 const missing = [];
+                 if (!this.gooseProvider) { missing.push('GOOSE_PROVIDER'); }
+                 if (!this.gooseModel) { missing.push('GOOSE_MODEL'); }
+                 const errorMsg = `Goose: Failed to load required configuration (${missing.join(', ')}) from config file. Please ensure ~/.config/goose/config.yaml (or Windows equivalent) exists and contains valid GOOSE_PROVIDER and GOOSE_MODEL keys.`;
+                 this.logger.error(errorMsg);
+                 vscode.window.showErrorMessage(errorMsg);
+                 this.setStatus(ServerStatus.ERROR); // Set error status
+                 this.eventEmitter.emit(ServerEvents.ERROR, new Error(errorMsg)); // Emit error event
+                 return false; // Prevent server start
+             }
+             // --- End Validate Configuration ---
+        }
+        // --- End Load Configuration ---
 
         // Generate a new secret key each time we start the server
         this.secretKey = this.generateSecretKey();
@@ -196,15 +223,20 @@ export class ServerManager {
     private async configureAgent(): Promise<void> {
         if (!this.apiClient) {
             this.logger.error('Cannot configure agent: API client not initialized');
-            return;
+            throw new Error('API client not initialized'); // Throw to be caught by start()
         }
 
         try {
             this.logger.info('Configuring Goose agent...');
 
-            // Use Databricks with Claude model by default - doesn't require API keys
-            let providerToUse = 'databricks';
-            let modelToUse = 'claude-3-7-sonnet';
+            // --- Use Loaded Config (Must be present due to validation in start()) ---
+            const providerToUse = this.gooseProvider!; // Non-null assertion ok due to check in start()
+            const modelToUse = this.gooseModel!;     // Non-null assertion ok due to check in start()
+
+            this.logger.info(`Using Provider from Config: ${providerToUse}`);
+            this.logger.info(`Using Model from Config: ${modelToUse}`);
+            // --- End Use Loaded Config ---
+
             let versionToUse = 'truncate'; // Default version
 
             try {
@@ -221,13 +253,13 @@ export class ServerManager {
                 // Continue with default version
             }
 
-            // Create the agent with Databricks provider
+            // Create the agent with the configured provider and model
             try {
-                this.logger.info(`Creating agent with provider: ${providerToUse}, model: ${modelToUse}`);
+                this.logger.info(`Creating agent with provider: ${providerToUse}, model: ${modelToUse}, version: ${versionToUse}`);
 
                 const agentResult = await this.apiClient.createAgent(
-                    providerToUse,  // Use databricks provider
-                    modelToUse,      // Specify Claude model explicitly
+                    providerToUse,  // Use provider from config
+                    modelToUse,      // Use model from config
                     versionToUse     // Use the version we determined
                 );
 
@@ -274,6 +306,7 @@ export class ServerManager {
 
             this.serverInfo = null;
             this.apiClient = null;
+            this.configLoadAttempted = false; // Allow re-loading config on next start
             this.setStatus(ServerStatus.STOPPED);
         }
     }
@@ -404,4 +437,4 @@ export class ServerManager {
         // This is a placeholder and should be replaced with the actual implementation
         return process.cwd();
     }
-} 
+}
