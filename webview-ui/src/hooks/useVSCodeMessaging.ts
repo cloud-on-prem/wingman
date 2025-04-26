@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getVSCodeAPI } from '../utils/vscode';
+import { formatIntermediateContent } from '../utils/contentFormatters';
 
 // Import MessageType from common types via alias
 import { MessageType } from '@common-types/index';
@@ -185,16 +186,51 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
             switch (message.command) {
                 case MessageType.CHAT_RESPONSE:
                     if (message.message) {
-                        // If this is a thinking message, update the intermediate text
-                        if (message.message.content && Array.isArray(message.message.content)) {
-                            const thinkingContent = message.message.content.find(
-                                (item: any) => item.type === 'thinking' || item.type === 'redacted_thinking'
-                            );
+                        try {
+                            // Process intermediate content (thinking or tool usage)
+                            if (message.message.content && Array.isArray(message.message.content)) {
+                                if (process.env.NODE_ENV === 'development') {
+                                    console.debug('Processing message content:', 
+                                        JSON.stringify(message.message.content.map((c: any) => ({ type: c.type })))
+                                    );
+                                }
+                                
+                                // Look for thinking content first
+                                const thinkingContent = message.message.content.find(
+                                    (item: any) => item.type === 'thinking' || item.type === 'redacted_thinking'
+                                );
 
-                            if (thinkingContent && 'thinking' in thinkingContent) {
-                                setIntermediateText(thinkingContent.thinking);
-                                return; // Don't add thinking messages to the main message list
+                                if (thinkingContent && 'thinking' in thinkingContent) {
+                                    setIntermediateText(thinkingContent.thinking);
+                                    
+                                    if (process.env.NODE_ENV === 'development') {
+                                        console.debug('Updated intermediate text from thinking:', thinkingContent.thinking);
+                                    }
+                                    
+                                    return; // Don't add thinking messages to the main message list
+                                }
+                                
+                                // If no thinking content, check for tool requests
+                                const toolRequestContent = message.message.content.find(
+                                    (item: any) => item.type === 'toolRequest'
+                                );
+                                
+                                if (toolRequestContent) {
+                                    const formattedText = formatIntermediateContent(toolRequestContent);
+                                    setIntermediateText(formattedText);
+                                    
+                                    if (process.env.NODE_ENV === 'development') {
+                                        console.debug('Updated intermediate text from tool request:', formattedText);
+                                    }
+                                    
+                                    return; // Don't add tool request messages to the main message list
+                                }
                             }
+                        } catch (error) {
+                            console.error('Error processing message content:', error);
+                            
+                            // Fallback behavior - show generic message
+                            setIntermediateText('Processing your request...');
                         }
 
                         // Get a content summary for comparison
@@ -407,4 +443,4 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
         stopGeneration,
         restartServer
     };
-}; 
+};

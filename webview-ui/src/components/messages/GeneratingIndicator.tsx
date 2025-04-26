@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import './GeneratingIndicator.css';
 
 interface GeneratingIndicatorProps {
@@ -18,12 +18,40 @@ const GeneratingIndicator: React.FC<GeneratingIndicatorProps> = ({
         setIsCollapsed(!isCollapsed);
     };
 
+    // Determine activity type and label based on intermediate content
+    const { activityType, headerLabel } = useMemo(() => {
+        if (!intermediateContent) {
+            return { activityType: 'thinking', headerLabel: 'Thinking' };
+        }
+        
+        if (intermediateContent.includes('Viewing file')) {
+            return { activityType: 'viewing', headerLabel: 'Viewing File' };
+        }
+        
+        if (intermediateContent.includes('Editing file')) {
+            return { activityType: 'editing', headerLabel: 'Editing File' };
+        }
+        
+        if (intermediateContent.includes('Running command')) {
+            return { activityType: 'command', headerLabel: 'Running Command' };
+        }
+        
+        if (intermediateContent.includes('Using tool')) {
+            return { activityType: 'tool', headerLabel: 'Using Tool' };
+        }
+        
+        return { activityType: 'thinking', headerLabel: 'Thinking' };
+    }, [intermediateContent]);
+    
+    // CSS class for activity icon
+    const activityIconClass = `activity-icon-${activityType}`;
+
     return (
         <div className="generating-container">
             {intermediateContent && (
-                <div className="thinking-content">
+                <div className={`thinking-content ${activityType}`}>
                     <div className="thinking-header">
-                        <span>Thinking</span>
+                        <span className={activityIconClass}>{headerLabel}</span>
                         <button
                             className="collapse-button"
                             onClick={toggleCollapse}
@@ -39,7 +67,7 @@ const GeneratingIndicator: React.FC<GeneratingIndicatorProps> = ({
                     )}
                 </div>
             )}
-            <div className="generating-indicator">
+            <div className={`generating-indicator ${activityType}`}>
                 {errorMessage ? (
                     <>
                         <span>{errorMessage}</span>
@@ -69,4 +97,4 @@ const GeneratingIndicator: React.FC<GeneratingIndicatorProps> = ({
     );
 };
 
-export default GeneratingIndicator; 
+export default GeneratingIndicator;

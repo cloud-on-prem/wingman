@@ -127,6 +127,58 @@
     font-weight: 500;
 }
 
+/* Activity type-specific colors and styles - using VSCode theme variables */
+.thinking-content.thinking .thinking-header {
+    border-left: 3px solid var(--vscode-progressBar-background);
+}
+
+.thinking-content.viewing .thinking-header {
+    border-left: 3px solid var(--vscode-charts-blue);
+}
+
+.thinking-content.editing .thinking-header {
+    border-left: 3px solid var(--vscode-charts-orange);
+}
+
+.thinking-content.command .thinking-header {
+    border-left: 3px solid var(--vscode-charts-purple);
+}
+
+.thinking-content.tool .thinking-header {
+    border-left: 3px solid var(--vscode-charts-green);
+}
+
+/* Activity icons - using pseudo-elements for custom icons */
+.activity-icon-thinking::before {
+    content: "💭 ";
+    font-size: 14px;
+    margin-right: 4px;
+}
+
+.activity-icon-viewing::before {
+    content: "📄 ";
+    font-size: 14px;
+    margin-right: 4px;
+}
+
+.activity-icon-editing::before {
+    content: "✏️ ";
+    font-size: 14px;
+    margin-right: 4px;
+}
+
+.activity-icon-command::before {
+    content: "🖥️ ";
+    font-size: 14px;
+    margin-right: 4px;
+}
+
+.activity-icon-tool::before {
+    content: "🔧 ";
+    font-size: 14px;
+    margin-right: 4px;
+}
+
 .collapse-button {
     background: none;
     border: none;
