@@ -43,21 +43,39 @@ const GeneratingIndicator: React.FC<GeneratingIndicatorProps> = ({
         return { activityType: 'thinking', headerLabel: 'Thinking' };
     }, [intermediateContent]);
     
-    // CSS class for activity icon
-    const activityIconClass = `activity-icon-${activityType}`;
+    // Get appropriate codicon class based on activity type
+    const getActivityIconClass = () => {
+        switch(activityType) {
+            case 'thinking':
+                return 'codicon-hubot';
+            case 'viewing':
+                return 'codicon-file-text';
+            case 'editing':
+                return 'codicon-edit';
+            case 'command':
+                return 'codicon-terminal';
+            case 'tool':
+                return 'codicon-tools';
+            default:
+                return 'codicon-hubot';
+        }
+    };
 
     return (
         <div className="generating-container">
             {intermediateContent && (
                 <div className={`thinking-content ${activityType}`}>
                     <div className="thinking-header">
-                        <span className={activityIconClass}>{headerLabel}</span>
+                        <span className="activity-label">
+                            <i className={`codicon ${getActivityIconClass()}`} aria-hidden="true"></i>
+                            {headerLabel}
+                        </span>
                         <button
                             className="collapse-button"
                             onClick={toggleCollapse}
                             title={isCollapsed ? "Expand thinking" : "Collapse thinking"}
                         >
-                            {isCollapsed ? "+" : "-"}
+                            <i className={`codicon ${isCollapsed ? "codicon-chevron-down" : "codicon-chevron-up"}`} aria-hidden="true"></i>
                         </button>
                     </div>
                     {!isCollapsed && (
@@ -70,12 +88,16 @@ const GeneratingIndicator: React.FC<GeneratingIndicatorProps> = ({
             <div className={`generating-indicator ${activityType}`}>
                 {errorMessage ? (
                     <>
-                        <span>{errorMessage}</span>
+                        <span className="error-message-container">
+                            <i className="codicon codicon-error" aria-hidden="true"></i>
+                            {errorMessage}
+                        </span>
                         <button
                             className="restart-server-button"
                             onClick={onStop}
                             title="Restart server"
                         >
+                            <i className="codicon codicon-refresh" aria-hidden="true"></i>
                             Restart Server
                         </button>
                     </>
@@ -88,6 +110,7 @@ const GeneratingIndicator: React.FC<GeneratingIndicatorProps> = ({
                             onClick={onStop}
                             title="Stop generation"
                         >
+                            <i className="codicon codicon-stop" aria-hidden="true"></i>
                             Stop
                         </button>
                     </>

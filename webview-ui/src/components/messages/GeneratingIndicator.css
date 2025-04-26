@@ -79,6 +79,9 @@
     cursor: pointer;
     font-size: 12px;
     margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 4px;
 }
 
 .stop-generation-button:hover,
@@ -93,9 +96,16 @@
     justify-content: center;
 }
 
-.error-message {
-    color: var(--vscode-editor-foreground);
+.error-message-container {
+    color: var(--vscode-errorForeground);
     font-weight: normal;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.error-message-container i.codicon {
+    font-size: 14px;
 }
 
 .restart-server-button {
@@ -148,35 +158,15 @@
     border-left: 3px solid var(--vscode-charts-green);
 }
 
-/* Activity icons - using pseudo-elements for custom icons */
-.activity-icon-thinking::before {
-    content: "💭 ";
-    font-size: 14px;
-    margin-right: 4px;
+/* Activity label with codicon */
+.activity-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 
-.activity-icon-viewing::before {
-    content: "📄 ";
+.activity-label i.codicon {
     font-size: 14px;
-    margin-right: 4px;
-}
-
-.activity-icon-editing::before {
-    content: "✏️ ";
-    font-size: 14px;
-    margin-right: 4px;
-}
-
-.activity-icon-command::before {
-    content: "🖥️ ";
-    font-size: 14px;
-    margin-right: 4px;
-}
-
-.activity-icon-tool::before {
-    content: "🔧 ";
-    font-size: 14px;
-    margin-right: 4px;
 }
 
 .collapse-button {
@@ -184,8 +174,16 @@
     border: none;
     color: var(--vscode-editor-foreground);
     cursor: pointer;
+    padding: 0;
+    margin-left: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.collapse-button i.codicon {
     font-size: 16px;
-    padding: 0 4px;
+    padding: 2px;
 }
 
 .intermediate-text {
