@@ -3,7 +3,7 @@ import { CodeReferences } from '../codeReferences/CodeReferences';
 import { CodeReference } from '../../types/index';
 import './ChatInput.css';
 // Import Lucide icons for send/stop
-import { Send, StopCircle } from 'lucide-react'; 
+import {  SendHorizonal, StopCircle } from 'lucide-react'; 
 
 // Interface for prepended code data
 interface PrependedCode {
@@ -122,7 +122,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                     title={isLoading ? 'Stop generation' : 'Send message (Enter)'} 
                 >
                     {/* Use Lucide SVG icons */}
-                    {isLoading ? <StopCircle size={16} /> : <Send size={16} />}
+                    {isLoading ? <StopCircle size={16} /> : <SendHorizonal size={16} />}
                 </button>
             </div>
         </div>
