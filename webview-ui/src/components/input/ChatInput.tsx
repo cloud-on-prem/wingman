@@ -2,6 +2,8 @@ import React, { useRef, useEffect, useState } from 'react';
 import { CodeReferences } from '../codeReferences/CodeReferences';
 import { CodeReference } from '../../types/index';
 import './ChatInput.css';
+// Import Lucide icons for send/stop
+import { Send, StopCircle } from 'lucide-react'; 
 
 // Interface for prepended code data
 interface PrependedCode {
@@ -106,19 +108,21 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                     value={inputMessage}
                     onChange={(e) => onInputChange(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    // Placeholder logic might need adjustment if we want different text when a temp ref exists
-                    placeholder={"Ask Goose a question..."} 
+                    placeholder={"What can Goose help with?"} // Update placeholder text
                     disabled={isLoading}
                     // Remove conditional class based on hasPrependedCode
                     // className={hasPrependedCode ? 'has-prepended-code' : ''} 
                 />
 
+                {/* Apply the working 'icon-button' class */}
                 <button
+                    className="icon-button" 
                     onClick={isLoading ? onStopGeneration : onSendMessage}
                     disabled={isDisabled}
-                    title={isLoading ? 'Stop generation' : 'Send message'}
+                    title={isLoading ? 'Stop generation' : 'Send message (Enter)'} 
                 >
-                    {isLoading ? 'Stop' : 'Send'}
+                    {/* Use Lucide SVG icons */}
+                    {isLoading ? <StopCircle size={16} /> : <Send size={16} />}
                 </button>
             </div>
         </div>

@@ -1,5 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import './GeneratingIndicator.css';
+// Import Lucide icon
+import { StopCircle } from 'lucide-react'; 
 
 interface GeneratingIndicatorProps {
     onStop: () => void;
@@ -104,13 +106,13 @@ const GeneratingIndicator: React.FC<GeneratingIndicatorProps> = ({
                 ) : (
                     <>
                         <div className="dot-pulse"></div>
-                        <span>Generating...</span>
+                        <span>Goose is working on it...</span> {/* Updated text */}
                         <button
                             className="stop-generation-button"
                             onClick={onStop}
                             title="Stop generation"
                         >
-                            <i className="codicon codicon-stop" aria-hidden="true"></i>
+                            <StopCircle size={14} /> {/* Use Lucide icon */}
                             Stop
                         </button>
                     </>

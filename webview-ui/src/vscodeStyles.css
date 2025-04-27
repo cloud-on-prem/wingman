@@ -1,7 +1,6 @@
 /* VSCode Webview Styles - uses VSCode's CSS variables for theming */
 
-/* Import codicon font from the @vscode/codicons package */
-@import '@vscode/codicons/dist/codicon.css';
+/* Remove Codicon import */
 
 /* VSCode-styled Container */
 .container {

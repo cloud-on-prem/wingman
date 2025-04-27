@@ -1,14 +1,17 @@
 import React from 'react';
+// Import Lucide icons
+import { History, Plus } from 'lucide-react'; 
 
+// Define the interface for session metadata
 export interface SessionMetadata {
     id: string;
     metadata: {
-        title: string;
+        title: string; // Keep title if used, otherwise remove if only description is needed
         description?: string;
         created?: number;
         updated?: number;
     };
-    isLocal?: boolean;
+    isLocal?: boolean; // Flag for locally created, unsaved sessions
 }
 
 interface SessionListProps {
@@ -38,7 +41,7 @@ export const SessionList: React.FC<SessionListProps> = ({
         <div className="vscode-session-list">
             <div className="vscode-session-list-header">
                 <h3>
-                    <i className="codicon codicon-history"></i>
+                    <History size={16} className="session-header-icon" /> {/* Use Lucide History icon */}
                     Sessions
                 </h3>
                 <button
@@ -46,7 +49,7 @@ export const SessionList: React.FC<SessionListProps> = ({
                     onClick={onCreateSession}
                     title="Create new session"
                 >
-                    <i className="codicon codicon-add"></i>
+                    <Plus size={16} /> {/* Use Lucide Plus icon */}
                 </button>
             </div>
 
@@ -56,38 +59,52 @@ export const SessionList: React.FC<SessionListProps> = ({
                         No saved sessions
                     </div>
                 ) : (
-                    validSessions.map(session => {
-                        // Determine the display name based on isLocal flag and description
-                        let displayName;
+                    // Sort sessions: local "New Chat" first, then by updated date descending
+                    [...validSessions] // Create a shallow copy to avoid mutating the original prop
+                        .sort((a, b) => {
+                            if (a.isLocal && !b.isLocal) return -1; // a (local) comes before b (saved)
+                            if (!a.isLocal && b.isLocal) return 1;  // b (local) comes before a (saved)
+                            // If both are local or both are saved, sort by date
+                            const dateA = a.metadata.updated || a.metadata.created || 0;
+                            const dateB = b.metadata.updated || b.metadata.created || 0;
+                            return dateB - dateA; // Descending order (newest first)
+                        })
+                        .map(session => {
+                            // Determine the display name based on isLocal flag and description
+                            let displayName;
+                            if (session.isLocal) {
+                                displayName = "New Chat"; // Consistent name for unsaved chats
+                            } else if (session.metadata.description && session.metadata.description.trim()) {
+                                displayName = session.metadata.description.trim();
+                            } else {
+                                // Fallback for saved sessions without a description
+                                displayName = `Session ${session.id.substring(0, 6)}...`; 
+                            }
 
-                        if (session.isLocal) {
-                            displayName = "New Chat";
-                        } else if (session.metadata.description && session.metadata.description.trim()) {
-                            displayName = session.metadata.description.trim();
-                        } else {
-                            displayName = "Untitled Session";
-                        }
+                            // Format the date/time string
+                            const dateTimeString = new Date(session.metadata.updated || session.metadata.created || Date.now()).toLocaleString();
 
-                        return (
-                            <div
-                                key={session.id}
-                                className={`vscode-session-item ${currentSessionId === session.id ? 'active' : ''}`}
-                                onClick={() => onSessionSelect(session.id)}
-                                title={displayName} // Show full name on hover
-                            >
-                                <div className="vscode-session-item-content">
-                                    <div className="vscode-session-item-name session-name-truncated">
-                                        {displayName}
+                            return (
+                                <div
+                                    key={session.id}
+                                    className={`vscode-session-item ${currentSessionId === session.id ? 'active' : ''}`}
+                                    onClick={() => onSessionSelect(session.id)}
+                                    title={`${displayName}\nLast updated: ${dateTimeString}`} // Tooltip with more info
+                                >
+                                    <div className="vscode-session-item-content">
+                                        <div className="vscode-session-item-name session-name-truncated">
+                                            {displayName}
+                                        </div>
+                                        <div className="vscode-session-item-info">
+                                            {dateTimeString}
+                                        </div>
                                     </div>
-                                    <div className="vscode-session-item-info">
-                                        {new Date(session.metadata.updated || session.metadata.created || Date.now()).toLocaleString()}
-                                    </div>
+                                    {/* Add action buttons (like delete, rename) here if needed in the future */}
                                 </div>
-                            </div>
-                        );
-                    })
+                            );
+                        })
                 )}
             </div>
         </div>
     );
-}; 
+};

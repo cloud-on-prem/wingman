@@ -14,6 +14,8 @@ import {
     // For now, let's assume we can find *something* or return null/placeholder.
     // Using SiGnubash as the fallback for now.
 } from '@icons-pack/react-simple-icons';
+// Import X from lucide-react for the close button
+import { X } from 'lucide-react';
 
 // Map language IDs to React Simple Icons components
 const getLanguageIconComponent = (languageId: string): React.FC<any> | null => {
@@ -98,8 +100,8 @@ const CodeReferenceChip: React.FC<CodeReferenceChipProps> = ({
                 onClick={() => onRemove(codeReference)}
                 title="Remove code reference"
             >
-                {/* Keep using codicon for the close button */}
-                <i className="codicon codicon-close"></i> 
+                {/* Use Lucide X icon */}
+                <X size={14} /> 
             </button>
         </div>
     );

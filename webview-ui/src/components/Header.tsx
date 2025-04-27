@@ -1,5 +1,7 @@
 import React from 'react';
 import { SessionMetadata } from './SessionList';
+// Import Lucide icons
+import { History, Plus } from 'lucide-react'; 
 
 interface HeaderProps {
     status: string;
@@ -57,7 +59,7 @@ export const Header: React.FC<HeaderProps> = ({
                     onClick={onNewSession}
                     disabled={isGenerating}
                 >
-                    <i className="codicon codicon-add"></i>
+                    <Plus size={16} /> {/* Use Lucide Plus icon */}
                 </button>
 
                 {/* Session History Button */}
@@ -67,7 +69,7 @@ export const Header: React.FC<HeaderProps> = ({
                     onClick={onToggleSessionDrawer}
                     disabled={isGenerating}
                 >
-                    <i className="codicon codicon-history"></i>
+                    <History size={16} /> {/* Use Lucide History icon */}
                 </button>
 
                 {/* Status Indicator Dot */}
@@ -85,4 +87,4 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
         </div>
     );
-}; 
+};

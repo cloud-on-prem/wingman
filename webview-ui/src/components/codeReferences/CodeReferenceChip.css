@@ -57,8 +57,4 @@
     color: var(--vscode-button-foreground); /* Explicit color */
 }
 
-/* Keep Codicon styles for the close button */
-.remove-button .codicon {
-    font-size: 14px; 
-    vertical-align: middle; 
-}
+/* Remove Codicon styles for the close button as it now uses Lucide */

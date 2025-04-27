@@ -7,16 +7,19 @@
 .generating-indicator {
     display: flex;
     align-items: center;
-    padding: 12px 16px;
+    justify-content: space-between; /* Ensure space between items */
+    padding: 8px 12px; /* Slightly reduce padding */
     background-color: var(--vscode-editor-background);
     border: 1px solid var(--vscode-panel-border);
     border-radius: 4px;
-    font-size: 14px;
-    gap: 8px;
+    font-size: 13px; /* Match other UI text */
+    gap: 8px; /* Reduce gap slightly for tighter look */
+    min-height: 30px; /* Ensure a minimum height */
 }
 
 /* Animation for the generating indicator */
 .dot-pulse {
+    flex-shrink: 0; /* Prevent dots from shrinking */
     position: relative;
     width: 10px;
     height: 10px;
@@ -52,6 +55,7 @@
     animation-delay: 0.5s;
 }
 
+/* Keep dot-pulse animation */
 @keyframes dot-pulse {
     0% {
         transform: scale(0.2);
@@ -69,20 +73,40 @@
     }
 }
 
+/* Adjust generating text span */
+.generating-indicator > span {
+    flex-grow: 1; 
+    color: var(--vscode-descriptionForeground); 
+    margin-left: 8px; /* Increase margin from dots */
+    line-height: 1; /* Align text better vertically */
+}
+
+
 .stop-generation-button,
 .restart-server-button {
     background-color: var(--vscode-button-secondaryBackground);
     color: var(--vscode-button-secondaryForeground);
     border: none;
-    padding: 4px 8px;
-    border-radius: 2px;
+    padding: 4px 8px; /* Keep padding */
+    border-radius: 3px; /* Match other buttons */
     cursor: pointer;
     font-size: 12px;
-    margin-left: auto;
+    margin-left: auto; /* Keep pushing to the right */
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 4px; /* Keep gap */
+    flex-shrink: 0; /* Prevent button from shrinking */
 }
+
+/* Style the icon within the stop/restart buttons */
+.stop-generation-button svg,
+.restart-server-button svg { /* Apply to both buttons if restart also uses icon */
+     vertical-align: middle; /* Better vertical alignment */
+     margin-right: 4px; /* Increase space */
+     /* Ensure icon color matches button text */
+     color: var(--vscode-button-secondaryForeground); 
+}
+
 
 .stop-generation-button:hover,
 .restart-server-button:hover {
