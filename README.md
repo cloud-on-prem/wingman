@@ -1,11 +1,11 @@
-# Goose VSCode Extension
+# Goose VS Code Extension
 
-This extension brings Goose AI functionality to Visual Studio Code.
+This extension brings [codename goose](https://block.github.io/goose/) AI agent functionality to Visual Studio Code.
 
 ## Features
 
 * Interactive chat UI
-* Access to Goose's AI capabilities directly within VSCode
+* Access to Goose's AI capabilities directly within VS Code
 * Support for coding assistance, explanations, and more
 * Code referencing with visual chips in the chat UI
 * Quick actions for common coding tasks
@@ -14,14 +14,14 @@ This extension brings Goose AI functionality to Visual Studio Code.
 
 ## Requirements
 
-> ⚠️ **VSCode 1.95.0 or higher is required** for this extension to function properly.
+> ⚠️ **VS Code 1.95.0 or higher is required** for this extension to function properly.
 
-> ⚠️ **Goose Desktop must be installed** before using this extension. 
+> ⚠️ **Goose Desktop must be installed** before using this extension.
 👉 Install Goose Desktop from [here](https://block.github.io/goose/)
 
 ## Installation
 
-There are two ways to install the Goose VSCode Extension:
+There are two ways to install the Goose VS Code Extension:
 
 ### Method 1: Install from GitHub Releases
 
@@ -52,9 +52,9 @@ You can reference code from your editor in your conversations with Goose:
 
 The behavior varies based on how much code is selected:
 
-- **No selection:** The entire active file is sent as a reference chip
-- **Small selections (< 100 lines):** The selected code is automatically included inline with your message
-- **Large selections (≥ 100 lines):** The code is added as a reference chip above the input box
+* **No selection:** The entire active file is sent as a reference chip
+* **Small selections (< 100 lines):** The selected code is automatically included inline with your message
+* **Large selections (≥ 100 lines):** The code is added as a reference chip above the input box
 
 This adaptive approach provides the best experience for different code sizes.
 
