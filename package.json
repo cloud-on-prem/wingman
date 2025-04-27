@@ -96,12 +96,12 @@
       ]
     },
     "keybindings": [
-      {
-        "command": "goose.askAboutSelection",
-        "key": "ctrl+shift+g",
-        "mac": "cmd+shift+g",
-        "when": "editorHasSelection"
-      }
+                {
+                    "command": "goose.askAboutSelection",
+                    "key": "ctrl+alt+g",
+                    "mac": "cmd+opt+g",
+                    "when": "editorTextFocus"
+                }
     ]
   },
   "scripts": {
