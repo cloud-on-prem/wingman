@@ -149,6 +149,19 @@ All API requests from the extension to the `goosed` server include the following
 - **Response**: JSON response with agent configuration details
 - **Usage**: Called by `ServerManager.configureAgent()` during server startup to set up the AI agent
 
+**POST /agent/prompt**
+- **Purpose**: Set or extend the base system prompt for the agent
+- **Request Headers**: `X-Secret-Key`, `Content-Type: application/json`
+- **Request Body**:
+  ```json
+  {
+    "extension": "string" 
+  }
+  ```
+  *Note: The `extension` field contains the text to be appended to or used as the system prompt.*
+- **Response**: JSON response indicating success or failure
+- **Usage**: Called by `ServerManager.configureAgent()` during server startup after the agent is created/configured, to provide initial context (e.g., VS Code environment details).
+
 **POST /extensions/add**
 - **Purpose**: Add extensions to the agent for additional capabilities
 - **Request Headers**: `X-Secret-Key`, `Content-Type: application/json`
@@ -228,4 +241,4 @@ The extension's `ApiClient` handles these error responses by:
 - Checking the response status code
 - Attempting to parse error messages from the response body
 - Logging detailed error information when in debug mode
-- Propagating errors through the extension's event system or throwing caught exceptions 
+- Propagating errors through the extension's event system or throwing caught exceptions
