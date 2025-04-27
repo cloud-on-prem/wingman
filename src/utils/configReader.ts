@@ -30,7 +30,7 @@ export interface OS {
 /**
  * Get the path to the Goose config file based on the current operating system
  * @param os The OS module to use (for testing)
- * @returns The path to the config file, or null if the platform isn't supported
+ * @returns The path to the config file, or null if the platform isn't supported or APPDATA is missing on Windows.
  */
 export function getConfigPath(os: OS = osDefault): string | null {
     const homeDir = os.homedir();
@@ -42,9 +42,10 @@ export function getConfigPath(os: OS = osDefault): string | null {
             const appData = process.env.APPDATA;
             if (!appData) {
                 logger.error('Could not determine APPDATA directory on Windows.');
-                return null;
+                return null; // Return null if APPDATA is not set
             }
-            configPath = path.join(homeDir, 'AppData', 'Roaming', 'Block', 'goose', 'config', 'config.yaml');
+            // Use appData instead of homeDir for the base path on Windows
+            configPath = path.join(appData, 'Block', 'goose', 'config', 'config.yaml');
             break;
         case 'darwin': // macOS
         case 'linux':
@@ -59,7 +60,7 @@ export function getConfigPath(os: OS = osDefault): string | null {
  * Read and parse the Goose configuration file
  * @param fs Optional file system implementation for testing
  * @param os Optional OS implementation for testing
- * @returns A GooseConfig object containing provider and model, or null values if not found
+ * @returns A GooseConfig object containing provider and model, or null values if not found or on error.
  */
 export function readGooseConfig(fs: FileSystem = fsDefault, os: OS = osDefault): GooseConfig {
     const defaultConfig: GooseConfig = { provider: null, model: null };
@@ -79,12 +80,12 @@ export function readGooseConfig(fs: FileSystem = fsDefault, os: OS = osDefault):
         }
 
         const fileContents = fs.readFileSync(configPath, 'utf8');
-        
+
         // Handle both string and buffer return types
-        const contentStr = typeof fileContents === 'string' 
-            ? fileContents 
+        const contentStr = typeof fileContents === 'string'
+            ? fileContents
             : fileContents.toString('utf8');
-            
+
         const config = YAML.parse(contentStr) as any; // Use 'any' for flexibility, validate below
 
         if (typeof config !== 'object' || config === null) {
@@ -97,9 +98,10 @@ export function readGooseConfig(fs: FileSystem = fsDefault, os: OS = osDefault):
 
         if (!provider) {
             logger.warn('GOOSE_PROVIDER key not found or invalid in config file.');
+            // Don't return early, still check for model
         }
         if (!model) {
-            logger.warn('GOOSE_MODEL key not found or invalid in config file.');
+             logger.warn('GOOSE_MODEL key not found or invalid in config file.');
         }
 
         logger.info(`Loaded config: Provider=${provider ?? 'MISSING'}, Model=${model ?? 'MISSING'}`);
@@ -111,4 +113,14 @@ export function readGooseConfig(fs: FileSystem = fsDefault, os: OS = osDefault):
         // Do not show VS Code error here, let ServerManager decide based on context
         return defaultConfig; // Return nulls on error (file read/parse error)
     }
+}
+
+/**
+ * Gets the determined path to the configuration file.
+ * This is essentially a wrapper around getConfigPath for clarity.
+ * @param os Optional OS implementation for testing
+ * @returns The config file path string, or null if not found/determined.
+ */
+export function getConfigFilePath(os: OS = osDefault): string | null {
+    return getConfigPath(os);
 }

@@ -64,6 +64,14 @@ const App: React.FC = () => {
         currentSession
     } = useSessionManagement(isLoading, sessionDrawerRef, sessionToggleButtonRef); // Pass refs to the hook
 
+    // Handler for opening the settings file
+    const handleOpenSettings = useCallback(() => {
+        const vscode = getVSCodeAPI();
+        vscode.postMessage({
+            command: MessageType.OPEN_SETTINGS_FILE
+        });
+    }, []);
+
     // Handler for sending a chat message
     const handleSendMessage = useCallback(() => {
         if (!inputMessage.trim() && codeReferences.length === 0) {
@@ -143,6 +151,7 @@ const App: React.FC = () => {
                 onToggleSessionDrawer={toggleSessionDrawer}
                 isGenerating={isLoading}
                 onNewSession={handleCreateSession}
+                onOpenSettings={handleOpenSettings} // Pass settings handler
                 toggleButtonRef={sessionToggleButtonRef} // Pass ref down to Header
             />
 

@@ -1,7 +1,7 @@
 import React, { RefObject } from 'react'; // Import RefObject
 import { SessionMetadata } from './SessionList';
 // Import Lucide icons
-import { History, Plus } from 'lucide-react';
+import { History, Plus, Settings } from 'lucide-react'; // Added Settings icon
 
 interface HeaderProps {
     status: string;
@@ -9,6 +9,7 @@ interface HeaderProps {
     onToggleSessionDrawer: () => void;
     isGenerating: boolean;
     onNewSession: () => void;
+    onOpenSettings: () => void; // Add handler for opening settings
     toggleButtonRef: RefObject<HTMLButtonElement>; // Add ref prop for the toggle button
 }
 
@@ -17,6 +18,7 @@ export const Header: React.FC<HeaderProps> = ({
     onToggleSessionDrawer,
     isGenerating,
     onNewSession,
+    onOpenSettings, // Destructure the settings handler
     toggleButtonRef // Destructure the ref prop
 }) => {
     // Helper to get status display text (incorporating isGenerating)
@@ -62,6 +64,16 @@ export const Header: React.FC<HeaderProps> = ({
                     disabled={isGenerating}
                 >
                     <Plus size={16} /> {/* Use Lucide Plus icon */}
+                </button>
+
+                {/* Settings Button */}
+                <button
+                    className="icon-button"
+                    title="Open Settings File"
+                    onClick={onOpenSettings}
+                    disabled={isGenerating} // Optionally disable during generation
+                >
+                    <Settings size={16} /> {/* Use Lucide Settings icon */}
                 </button>
 
                 {/* Session History Button - Assign the ref here */}
