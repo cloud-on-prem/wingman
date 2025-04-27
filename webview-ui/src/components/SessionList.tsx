@@ -76,10 +76,10 @@ export const SessionList: React.FC<SessionListProps> = ({
                                 displayName = "New Chat"; // Consistent name for unsaved chats
                             } else if (session.metadata.description && session.metadata.description.trim()) {
                                 displayName = session.metadata.description.trim();
-                            } else {
-                                // Fallback for saved sessions without a description
-                                displayName = `Session ${session.id.substring(0, 6)}...`; 
-                            }
+ } else {
+     // Fallback for saved sessions without a description
+     displayName = "Untitled Session"; // Use "Untitled Session" as fallback
+ }
 
                             // Format the date/time string
                             const dateTimeString = new Date(session.metadata.updated || session.metadata.created || Date.now()).toLocaleString();
