@@ -12,6 +12,19 @@ import { readGooseConfig } from '../utils/configReader';
 // Get a logger instance for the ServerManager
 const logger = getLogger('ServerManager');
 
+// System prompt providing context about the VS Code environment
+const vscodePrompt = `You are an AI assistant integrated into Visual Studio Code via the Goose extension.
+
+The user is interacting with you through a dedicated chat panel within the VS Code editor interface. Key features include:
+- A chat interface displaying the conversation history.
+- Support for standard markdown formatting in your responses, rendered by VS Code.
+- Support for code blocks with syntax highlighting, leveraging VS Code's capabilities.
+- Tool use messages are displayed inline within the chat; detailed outputs might be presented in expandable sections or separate views depending on the tool.
+
+The user manages extensions primarily through VS Code's standard extension management features (Extensions viewlet) or potentially specific configuration settings within VS Code's settings UI (\`settings.json\` or a dedicated extension settings page).
+
+Some capabilities might be provided by built-in features of the Goose extension, while others might come from additional VS Code extensions the user has installed. Be aware of the code context potentially provided by the user (e.g., selected code snippets, open files).`;
+
 /**
  * Server status options
  */
@@ -265,12 +278,22 @@ export class ServerManager {
 
                 this.logger.info(`Agent created successfully: ${JSON.stringify(agentResult)}`);
 
+                // Set the VS Code specific system prompt
+                try {
+                    this.logger.info('Setting VS Code system prompt for agent...');
+                    await this.apiClient.setAgentPrompt(vscodePrompt); // Use the constant defined earlier
+                    this.logger.info('Successfully set VS Code system prompt.');
+                } catch (promptError) {
+                    this.logger.error(`Failed to set VS Code system prompt: ${promptError}`);
+                    // Log the error but continue server startup as per plan
+                }
+
                 // Extend the agent with the VSCode developer extension
                 try {
                     await this.apiClient.addExtension('developer');
                     this.logger.info('Added developer extension to agent');
-                } catch (promptErr) {
-                    this.logger.error('Failed to add developer extension:', promptErr);
+                } catch (extensionErr) { // Renamed variable to avoid conflict
+                    this.logger.error('Failed to add developer extension:', extensionErr);
                     // Continue even if extension addition fails
                 }
 

@@ -184,6 +184,25 @@ export class ApiClient {
     }
 
     /**
+     * Set the system prompt for the agent.
+     * @param promptText The text to set as the system prompt.
+     * @returns The API response.
+     */
+    public async setAgentPrompt(promptText: string): Promise<any> {
+        this.logger.info(`Setting agent system prompt...`);
+        const response = await this.request('/agent/prompt', {
+            method: 'POST',
+            body: JSON.stringify({ extension: promptText }),
+        });
+
+        // Error handling is already done within this.request,
+        // so we just need to parse the JSON response here.
+        const responseData = await response.json();
+        this.logger.info(`Agent prompt set successfully, response: ${JSON.stringify(responseData)}`);
+        return responseData;
+    }
+
+    /**
      * Get available agent versions
      * @returns Available versions and default version
      */
@@ -473,4 +492,4 @@ export class ApiClient {
     public emit(event: string, ...args: any[]): boolean {
         return this.events.emit(event, ...args);
     }
-} 
+}
