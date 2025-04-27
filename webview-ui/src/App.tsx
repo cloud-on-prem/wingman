@@ -19,6 +19,9 @@ const App: React.FC = () => {
     const [inputMessage, setInputMessage] = useState<string>('');
     const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
     const chatInputRef = useRef<HTMLTextAreaElement>(null);
+    // Refs for click-outside logic
+    const sessionDrawerRef = useRef<HTMLDivElement>(null);
+    const sessionToggleButtonRef = useRef<HTMLButtonElement>(null); // Ref for the button in Header
 
     // Use the VS Code messaging hook
     const {
@@ -59,7 +62,15 @@ const App: React.FC = () => {
         handleCreateSession,
         toggleSessionDrawer,
         currentSession
-    } = useSessionManagement(isLoading);
+    } = useSessionManagement(isLoading, sessionDrawerRef, sessionToggleButtonRef); // Pass refs to the hook
+
+    // Handler for opening the settings file
+    const handleOpenSettings = useCallback(() => {
+        const vscode = getVSCodeAPI();
+        vscode.postMessage({
+            command: MessageType.OPEN_SETTINGS_FILE
+        });
+    }, []);
 
     // Handler for sending a chat message
     const handleSendMessage = useCallback(() => {
@@ -140,17 +151,23 @@ const App: React.FC = () => {
                 onToggleSessionDrawer={toggleSessionDrawer}
                 isGenerating={isLoading}
                 onNewSession={handleCreateSession}
+                onOpenSettings={handleOpenSettings} // Pass settings handler
+                toggleButtonRef={sessionToggleButtonRef} // Pass ref down to Header
             />
 
             {showSessionDrawer && (
-                <SessionList
-                    sessions={sessions}
-                    currentSessionId={currentSessionId}
-                    onSessionSelect={handleSessionSelect}
-                    onCreateSession={handleCreateSession}
-                />
+                // Assign the ref to the drawer's container div
+                <div ref={sessionDrawerRef} className="session-drawer-container"> {/* Added a wrapper div for the ref */}
+                    <SessionList
+                        sessions={sessions}
+                        currentSessionId={currentSessionId}
+                        onSessionSelect={handleSessionSelect}
+                        onCreateSession={handleCreateSession}
+                    />
+                </div>
             )}
 
+            {/* Removed the duplicated block below */}
             <div className="message-container">
                 <MessageList
                     messages={messages}

@@ -24,7 +24,8 @@ export enum MessageType {
     GET_SESSIONS = 'getSessions',
     RESTART_SERVER = 'restartServer',
     GET_SERVER_STATUS = 'getServerStatus',
-    FOCUS_CHAT_INPUT = 'focusChatInput'
+    FOCUS_CHAT_INPUT = 'focusChatInput',
+    OPEN_SETTINGS_FILE = 'openSettingsFile' // Added for opening settings
 }
 
 // Type for code references
@@ -57,9 +58,10 @@ export interface VSCodeAPI {
 }
 
 // Re-export Message type from shared types
-export type { Message } from '../../../src/shared/types';
+export type { Message } from '../../../src/common-types/index'; // Re-added with correct path
 
 // Export TextContent and MessageContent types
+// Note: These might differ slightly from the shared SimpleContent if webview needs specific handling
 export interface TextContent {
     type: 'text';
     text: string;
@@ -77,4 +79,4 @@ export interface ActionContent {
     action: string;
 }
 
-export type MessageContent = TextContent | ImageContent | ActionContent; 
+export type MessageContent = TextContent | ImageContent | ActionContent;

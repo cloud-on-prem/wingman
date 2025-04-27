@@ -5,11 +5,11 @@ import { History, Plus } from 'lucide-react';
 // Define the interface for session metadata
 export interface SessionMetadata {
     id: string;
+    modified: string; // ISO 8601 string from backend
     metadata: {
         title: string; // Keep title if used, otherwise remove if only description is needed
         description?: string;
-        created?: number;
-        updated?: number;
+        // created/updated numbers removed from here
     };
     isLocal?: boolean; // Flag for locally created, unsaved sessions
 }
@@ -65,8 +65,9 @@ export const SessionList: React.FC<SessionListProps> = ({
                             if (a.isLocal && !b.isLocal) return -1; // a (local) comes before b (saved)
                             if (!a.isLocal && b.isLocal) return 1;  // b (local) comes before a (saved)
                             // If both are local or both are saved, sort by date
-                            const dateA = a.metadata.updated || a.metadata.created || 0;
-                            const dateB = b.metadata.updated || b.metadata.created || 0;
+                            // Access top-level 'modified' string and parse
+                            const dateA = a.modified ? new Date(a.modified).getTime() : 0; // Use 0 only if modified is missing/invalid
+                            const dateB = b.modified ? new Date(b.modified).getTime() : 0; // Use 0 only if modified is missing/invalid
                             return dateB - dateA; // Descending order (newest first)
                         })
                         .map(session => {
@@ -82,7 +83,7 @@ export const SessionList: React.FC<SessionListProps> = ({
  }
 
                             // Format the date/time string
-                            const dateTimeString = new Date(session.metadata.updated || session.metadata.created || Date.now()).toLocaleString();
+                            const dateTimeString = session.modified ? new Date(session.modified).toLocaleString() : 'Invalid date'; // Access top-level 'modified'
 
                             return (
                                 <div

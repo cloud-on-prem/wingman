@@ -13,6 +13,8 @@ import { GooseCodeActionProvider } from './utils/codeActionProvider';
 import { SessionManager, SessionEvents } from './server/chat/sessionManager';
 // Import MessageType from common types
 import { MessageType } from './common-types';
+// Import config reader function
+import { getConfigFilePath } from './utils/configReader';
 // Import logging utilities
 import { DefaultLogger, getLogger, LogLevel } from './utils/logging';
 
@@ -428,6 +430,29 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 						});
 					}
 				});
+				break;
+
+			case MessageType.OPEN_SETTINGS_FILE:
+				try {
+					const configPath = getConfigFilePath(); // Use the imported function
+					if (configPath) {
+						const uri = vscode.Uri.file(configPath);
+						try {
+							const doc = await vscode.workspace.openTextDocument(uri);
+							await vscode.window.showTextDocument(doc);
+							logger.info(`Opened settings file: ${configPath}`);
+						} catch (err) {
+							logger.error(`Failed to open settings file at ${configPath}:`, err);
+							vscode.window.showErrorMessage(`Could not open settings file. It might not exist or there was a read error. Expected location: ${configPath}`);
+						}
+					} else {
+						logger.error('Could not determine the path to the settings file.');
+						vscode.window.showErrorMessage('Could not determine the path to the Goose settings file for your OS.');
+					}
+				} catch (error) {
+					logger.error('Error handling OPEN_SETTINGS_FILE:', error);
+					vscode.window.showErrorMessage('An unexpected error occurred while trying to open the settings file.');
+				}
 				break;
 
 			default:
