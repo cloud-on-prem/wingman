@@ -66,16 +66,6 @@ export const Header: React.FC<HeaderProps> = ({
                     <Plus size={16} /> {/* Use Lucide Plus icon */}
                 </button>
 
-                {/* Settings Button */}
-                <button
-                    className="icon-button"
-                    title="Open Settings File"
-                    onClick={onOpenSettings}
-                    disabled={isGenerating} // Optionally disable during generation
-                >
-                    <Settings size={16} /> {/* Use Lucide Settings icon */}
-                </button>
-
                 {/* Session History Button - Assign the ref here */}
                 <button
                     ref={toggleButtonRef} // Assign the ref
@@ -85,6 +75,16 @@ export const Header: React.FC<HeaderProps> = ({
                     disabled={isGenerating}
                 >
                     <History size={16} /> {/* Use Lucide History icon */}
+                </button>
+
+                {/* Settings Button */}
+                <button
+                    className="icon-button"
+                    title="Open Settings File"
+                    onClick={onOpenSettings}
+                    disabled={isGenerating} // Optionally disable during generation
+                >
+                    <Settings size={16} /> {/* Use Lucide Settings icon */}
                 </button>
 
                 {/* Status Indicator Dot */}
