@@ -1,6 +1,8 @@
 import React, { memo } from 'react';
-import { Message as MessageType } from '../../types';
+import { Message as MessageType, MessageContent } from '../../types/index'; // Correct import path and add MessageContent
 import { MessageContentRenderer } from './MessageContent';
+// Import Lucide icons for copy/check
+import { Copy, Check } from 'lucide-react'; 
 
 // Add the SVG for the Goose icon - using the same one from the sidebar
 const GooseIcon = () => (
@@ -30,9 +32,10 @@ const Message: React.FC<MessageProps> = memo(({
     const getMessageText = (message: MessageType): string => {
         if (!message.content) { return ''; }
 
+        // Add type annotation for 'item'
         return message.content
-            .filter(item => item.type === 'text' && 'text' in item)
-            .map(item => 'text' in item ? item.text : '')
+            .filter((item: MessageContent) => item.type === 'text' && 'text' in item) 
+            .map((item: MessageContent) => 'text' in item ? item.text : '')
             .join('\n');
     };
 
@@ -94,7 +97,8 @@ const Message: React.FC<MessageProps> = memo(({
                             onClick={() => onCopyMessage(message)}
                             title="Copy message"
                         >
-                            <i className={`codicon ${copiedMessageId === message.id ? 'codicon-check' : 'codicon-copy'}`}></i>
+                            {/* Use Lucide icons, conditionally render Check on copy */}
+                            {copiedMessageId === message.id ? <Check size={14} /> : <Copy size={14} />}
                         </button>
                     </div>
                 </div>
@@ -103,4 +107,4 @@ const Message: React.FC<MessageProps> = memo(({
     );
 });
 
-export default Message; 
+export default Message;

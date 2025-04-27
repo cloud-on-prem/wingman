@@ -27,5 +27,6 @@ export enum MessageType {
     SERVER_EXIT = 'serverExit',
     GET_SERVER_STATUS = 'getServerStatus',
     RESTART_SERVER = 'restartServer',
-    FOCUS_CHAT_INPUT = 'focusChatInput'
-} 
+    FOCUS_CHAT_INPUT = 'focusChatInput',
+    PREPARE_MESSAGE_WITH_CODE = 'prepareMessageWithCode' // Added for <100 line selections
+}

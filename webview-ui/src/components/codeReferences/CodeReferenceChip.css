@@ -46,8 +46,15 @@
     background-color: var(--vscode-button-hoverBackground);
 }
 
-.codicon {
-    font-size: 14px;
-    display: flex;
-    align-items: center;
+/* Specific override for Devicon icons within the chip button */
+.chip-button i[class^="devicon-"] { 
+    display: inline-block !important; /* Force display */
+    font-size: 14px; 
+    vertical-align: middle; 
+    width: 16px; /* Ensure size */
+    height: 16px; 
+    line-height: 1; 
+    color: var(--vscode-button-foreground); /* Explicit color */
 }
+
+/* Remove Codicon styles for the close button as it now uses Lucide */

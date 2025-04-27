@@ -48,8 +48,23 @@ export class ChatProcessor {
     /**
      * Send a message to the Goose AI
      */
-    public async sendMessage(text: string, codeReferences?: any[], messageId?: string, sessionId?: string): Promise<void> {
-        console.log("chatProcessor.sendMessage called with text:", text);
+    public async sendMessage(
+        text: string, 
+        codeReferences?: any[], 
+        prependedCode?: any,  // New parameter for <100 line code selections
+        messageId?: string, 
+        sessionId?: string
+    ): Promise<void> {
+        // Detailed logging at the start of the method
+        console.log("--- ChatProcessor.sendMessage Start ---");
+        console.log("Received text:", text);
+        console.log("Received codeReferences:", JSON.stringify(codeReferences));
+        console.log("Received prependedCode:", JSON.stringify(prependedCode));
+        console.log("Received messageId:", messageId);
+        console.log("Received sessionId:", sessionId);
+        
+        // Ensure codeReferences is an array
+        codeReferences = codeReferences || [];
 
         // Get the session ID (from parameter or current session)
         let effectiveSessionId: string | undefined = sessionId;
@@ -64,16 +79,43 @@ export class ChatProcessor {
 
         console.log("Using session ID:", effectiveSessionId || "none (creating new session)");
 
-        // Format message with code references if provided
-        let formattedText = text;
-        if (codeReferences && codeReferences.length > 0) {
-            formattedText = text || '';
+        // Format message with prepended code if provided
+        // or with code references if provided
+        let formattedText = text || '';
+        
+        // FIX: Completely reworked this section to handle prependedCode correctly
+        if (prependedCode) {
+            console.log("DEBUG: prependedCode type:", typeof prependedCode);
+            console.log("DEBUG: prependedCode keys:", prependedCode ? Object.keys(prependedCode) : 'null');
+            
+            // Extract content, fileName, and languageId safely
+            const content = prependedCode.content || '';
+            const languageId = prependedCode.languageId || '';
+            const fileName = prependedCode.fileName || '';
+            
+            console.log(`DEBUG: Adding code block for ${fileName} (${languageId})`);
+            console.log(`DEBUG: Code content length: ${content.length}`);
+            
+            // Always format with the code block, even if some properties are missing
+            const codeBlock = `\`\`\`${languageId}\n${content}\n\`\`\`\n\n`;
+            
+            // Prepend the code block to the message text
+            formattedText = codeBlock + formattedText;
+            
+            // Important: Clear codeReferences to ensure we don't send the code twice
+            codeReferences = []; 
+            
+            console.log("Formatted message with prepended code block");
+            console.log("DEBUG: Final formatted text:", formattedText);
+        } else if (codeReferences && codeReferences.length > 0) {
+            // Original behavior for code references (≥100 lines)
             for (const reference of codeReferences) {
                 if (formattedText.length > 0) {
                     formattedText += '\n\n';
                 }
                 formattedText += `From ${reference.filePath}:${reference.startLine}-${reference.endLine}`;
             }
+            console.log("Formatted message with code references for ≥100 line selection");
         }
 
         console.log("Formatted message text:", formattedText);
@@ -515,4 +557,3 @@ export class ChatProcessor {
         }
     }
 }
-

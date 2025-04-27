@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import './GeneratingIndicator.css';
+// Import Lucide icon
+import { StopCircle } from 'lucide-react'; 
 
 interface GeneratingIndicatorProps {
     onStop: () => void;
@@ -18,18 +20,64 @@ const GeneratingIndicator: React.FC<GeneratingIndicatorProps> = ({
         setIsCollapsed(!isCollapsed);
     };
 
+    // Determine activity type and label based on intermediate content
+    const { activityType, headerLabel } = useMemo(() => {
+        if (!intermediateContent) {
+            return { activityType: 'thinking', headerLabel: 'Thinking' };
+        }
+        
+        if (intermediateContent.includes('Viewing file')) {
+            return { activityType: 'viewing', headerLabel: 'Viewing File' };
+        }
+        
+        if (intermediateContent.includes('Editing file')) {
+            return { activityType: 'editing', headerLabel: 'Editing File' };
+        }
+        
+        if (intermediateContent.includes('Running command')) {
+            return { activityType: 'command', headerLabel: 'Running Command' };
+        }
+        
+        if (intermediateContent.includes('Using tool')) {
+            return { activityType: 'tool', headerLabel: 'Using Tool' };
+        }
+        
+        return { activityType: 'thinking', headerLabel: 'Thinking' };
+    }, [intermediateContent]);
+    
+    // Get appropriate codicon class based on activity type
+    const getActivityIconClass = () => {
+        switch(activityType) {
+            case 'thinking':
+                return 'codicon-hubot';
+            case 'viewing':
+                return 'codicon-file-text';
+            case 'editing':
+                return 'codicon-edit';
+            case 'command':
+                return 'codicon-terminal';
+            case 'tool':
+                return 'codicon-tools';
+            default:
+                return 'codicon-hubot';
+        }
+    };
+
     return (
         <div className="generating-container">
             {intermediateContent && (
-                <div className="thinking-content">
+                <div className={`thinking-content ${activityType}`}>
                     <div className="thinking-header">
-                        <span>Thinking</span>
+                        <span className="activity-label">
+                            <i className={`codicon ${getActivityIconClass()}`} aria-hidden="true"></i>
+                            {headerLabel}
+                        </span>
                         <button
                             className="collapse-button"
                             onClick={toggleCollapse}
                             title={isCollapsed ? "Expand thinking" : "Collapse thinking"}
                         >
-                            {isCollapsed ? "+" : "-"}
+                            <i className={`codicon ${isCollapsed ? "codicon-chevron-down" : "codicon-chevron-up"}`} aria-hidden="true"></i>
                         </button>
                     </div>
                     {!isCollapsed && (
@@ -39,27 +87,32 @@ const GeneratingIndicator: React.FC<GeneratingIndicatorProps> = ({
                     )}
                 </div>
             )}
-            <div className="generating-indicator">
+            <div className={`generating-indicator ${activityType}`}>
                 {errorMessage ? (
                     <>
-                        <span>{errorMessage}</span>
+                        <span className="error-message-container">
+                            <i className="codicon codicon-error" aria-hidden="true"></i>
+                            {errorMessage}
+                        </span>
                         <button
                             className="restart-server-button"
                             onClick={onStop}
                             title="Restart server"
                         >
+                            <i className="codicon codicon-refresh" aria-hidden="true"></i>
                             Restart Server
                         </button>
                     </>
                 ) : (
                     <>
                         <div className="dot-pulse"></div>
-                        <span>Generating...</span>
+                        <span>Goose is working on it...</span> {/* Updated text */}
                         <button
                             className="stop-generation-button"
                             onClick={onStop}
                             title="Stop generation"
                         >
+                            <StopCircle size={14} /> {/* Use Lucide icon */}
                             Stop
                         </button>
                     </>
@@ -69,4 +122,4 @@ const GeneratingIndicator: React.FC<GeneratingIndicatorProps> = ({
     );
 };
 
-export default GeneratingIndicator; 
+export default GeneratingIndicator;

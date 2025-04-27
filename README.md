@@ -10,7 +10,7 @@ This extension brings Goose AI functionality to Visual Studio Code.
 * Code referencing with visual chips in the chat UI
 * Quick actions for common coding tasks
 * Code action suggestions for diagnostics and selection
-* Keyboard shortcuts for improved productivity (cmd/ctrl+shift+g by default; configurable)
+* Keyboard shortcuts for improved productivity (cmd+opt+g / ctrl+alt+g by default; configurable)
 
 ## Requirements
 
@@ -46,12 +46,17 @@ The Goose chat interface appears in the sidebar activity bar. Click the Goose ic
 
 You can reference code from your editor in your conversations with Goose:
 
-1. Select code in your editor
-2. Right-click and choose "Ask Goose about this code" or use the keyboard shortcut <kbd>Ctrl+Shift+G</kbd> (<kbd>Cmd+Shift+G</kbd> on macOS)
-3. The code will be added as a reference chip above the input box
-4. Type your question and send
+1. Select code in your editor (or don't select anything to use the entire file)
+2. Right-click and choose "Ask Goose about this code" or use the keyboard shortcut <kbd>Ctrl+Alt+G</kbd> (<kbd>Cmd+Option+G</kbd> on macOS)
+3. The chat input will be automatically focused, allowing you to immediately start typing your question
 
-When you use the keyboard shortcut, the chat input will be automatically focused, allowing you to immediately start typing your question.
+The behavior varies based on how much code is selected:
+
+- **No selection:** The entire active file is sent as a reference chip
+- **Small selections (< 100 lines):** The selected code is automatically included inline with your message
+- **Large selections (≥ 100 lines):** The code is added as a reference chip above the input box
+
+This adaptive approach provides the best experience for different code sizes.
 
 ### Quick Actions
 
@@ -63,7 +68,7 @@ The extension currently provides the following quick action command that can be 
 
 | Command | Shortcut (Windows/Linux) | Shortcut (macOS) |
 |---------|--------------------------|------------------|
-| Ask Goose about selected code | <kbd>Ctrl+Shift+G</kbd> | <kbd>Cmd+Shift+G</kbd> |
+| Ask Goose about selected code | <kbd>Ctrl+Alt+G</kbd> | <kbd>Cmd+Option+G</kbd> |
 
 ## Extension Settings
 
@@ -84,4 +89,3 @@ Information for developers contributing to this extension can be found in [docs/
 ## License
 
 This extension is licensed under the MIT License.
-

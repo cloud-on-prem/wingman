@@ -6,6 +6,7 @@ import * as fs from 'fs';
 import { ServerManager, ServerStatus, ServerEvents } from './server/serverManager';
 import { ChatProcessor, ChatEvents } from './server/chat/chatProcessor';
 import { Message, getTextContent } from './types';
+// Import CodeReference type explicitly if needed, or rely on CodeReferenceManager export
 import { CodeReferenceManager, CodeReference } from './utils/codeReferenceManager';
 import { WorkspaceContextProvider } from './utils/workspaceContextProvider';
 import { GooseCodeActionProvider } from './utils/codeActionProvider';
@@ -17,6 +18,9 @@ import { DefaultLogger, getLogger, LogLevel } from './utils/logging';
 
 // Create logger for the extension
 const logger = getLogger('Extension');
+
+// Define line limit constant for prepending code vs. adding reference chip
+const SELECTION_LINE_LIMIT_FOR_PREPEND = 100;
 
 // Interface for messages sent between extension and webview
 interface WebviewMessage {
@@ -121,23 +125,27 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 				break;
 
 			case MessageType.SEND_CHAT_MESSAGE:
-				if (message.text.trim() || (message.codeReferences && message.codeReferences.length > 0)) {
-					// Only process if there's actual content or code references
+				// Check if there's text, explicit code references (chips), or prepended code
+				if (message.text?.trim() || message.codeReferences?.length > 0 || message.prependedCode) {
 					try {
-						// Pass the messageId along to the chat processor
+						// Pass relevant data to the chat processor
+						// Note: The signature of sendMessage might need adjustment in Task 1.6
 						await this._chatProcessor.sendMessage(
 							message.text,
-							message.codeReferences,
+							message.codeReferences, // Existing code reference chips
+							message.prependedCode, // Pass the new prepended code data
 							message.messageId,
 							message.sessionId || this._sessionManager.getCurrentSessionId()
 						);
 					} catch (error) {
-						console.error('Error sending message to chat processor:', error);
+						logger.error('Error sending message to chat processor:', error); // Use logger
 						this._sendMessageToWebview({
 							command: MessageType.ERROR,
 							errorMessage: error instanceof Error ? error.message : String(error)
 						});
 					}
+				} else {
+					logger.warn('Received SEND_CHAT_MESSAGE with no content.');
 				}
 				break;
 
@@ -659,11 +667,88 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Command to ask Goose about selected code
 	const askAboutSelectionDisposable = vscode.commands.registerCommand('goose.askAboutSelection', () => {
-		provider.addCodeReference();
-		vscode.commands.executeCommand('goose.chatView.focus');
+		const editor = vscode.window.activeTextEditor;
+		if (!editor) {
+			vscode.window.showInformationMessage('No active text editor found.');
+			return;
+		}
 
-		// Send a message to the webview to focus the chat input
-		if (provider) {
+		const document = editor.document;
+		const selection = editor.selection;
+		const codeReferenceManager = CodeReferenceManager.getInstance();
+
+		let codeReferenceToSend: CodeReference | null = null;
+		let prepayloadToSend: any = null;
+		let actionTaken = false; // Flag to track if we should focus
+
+		if (selection.isEmpty) {
+			// Task 1.2: No selection - use whole file
+			const fileContent = document.getText();
+			if (!fileContent) {
+				vscode.window.showInformationMessage('Active file is empty.');
+				return;
+			}
+			const fileName = path.basename(document.fileName);
+			const lineCount = document.lineCount;
+			codeReferenceToSend = {
+				// Generate ID similar to manager's pattern
+				id: `${fileName}-1-${lineCount}-${Date.now()}`,
+				filePath: document.uri.fsPath,
+				fileName: fileName,
+				startLine: 1, // 1-based
+				endLine: lineCount, // 1-based
+				selectedText: fileContent, // Use correct property name
+				languageId: document.languageId
+			};
+			logger.info(`No selection, creating reference for whole file: ${codeReferenceToSend.fileName}`);
+			actionTaken = true;
+
+		} else {
+			// Selection exists
+			const selectedLines = selection.end.line - selection.start.line + 1;
+
+			if (selectedLines >= SELECTION_LINE_LIMIT_FOR_PREPEND) {
+				// Task 1.3: >= 100 lines - use manager to create code reference chip
+				codeReferenceToSend = codeReferenceManager.getCodeReferenceFromSelection();
+				if (codeReferenceToSend) {
+					logger.info(`Selection >= ${SELECTION_LINE_LIMIT_FOR_PREPEND} lines, creating code reference chip.`);
+					actionTaken = true;
+				} else {
+					// Should not happen if selection is not empty, but good practice
+					logger.warn('getCodeReferenceFromSelection returned null despite non-empty selection.');
+				}
+			} else {
+				// Task 1.4: < 100 lines - prepare message with code
+				const selectedText = document.getText(selection);
+				prepayloadToSend = {
+					content: selectedText,
+					fileName: path.basename(document.fileName),
+					languageId: document.languageId,
+					// Add line numbers to the payload
+					startLine: selection.start.line + 1, // VS Code lines are 0-based, display is 1-based
+					endLine: selection.end.line + 1
+				};
+				logger.info(`Selection < ${SELECTION_LINE_LIMIT_FOR_PREPEND} lines (${prepayloadToSend.startLine}-${prepayloadToSend.endLine}), preparing message with code.`);
+				actionTaken = true;
+			}
+		}
+
+		// Send the appropriate message to the webview
+		if (codeReferenceToSend) {
+			provider.sendMessageToWebview({
+				command: MessageType.ADD_CODE_REFERENCE,
+				codeReference: codeReferenceToSend
+			});
+		} else if (prepayloadToSend) {
+			provider.sendMessageToWebview({
+				command: MessageType.PREPARE_MESSAGE_WITH_CODE,
+				payload: prepayloadToSend
+			});
+		}
+
+		// Focus the chat view and input only if an action was taken
+		if (actionTaken) {
+			vscode.commands.executeCommand('goose.chatView.focus');
 			provider.sendMessageToWebview({
 				command: MessageType.FOCUS_CHAT_INPUT
 			});

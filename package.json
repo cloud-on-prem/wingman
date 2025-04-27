@@ -2,7 +2,7 @@
   "name": "wingman-goose",
   "displayName": "Wingman Goose",
   "description": "Goose AI for VSCode",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "repository": {
     "type": "git",
     "url": "https://github.com/cloud-on-prem/wingman"
@@ -98,9 +98,9 @@
     "keybindings": [
       {
         "command": "goose.askAboutSelection",
-        "key": "ctrl+shift+g",
-        "mac": "cmd+shift+g",
-        "when": "editorHasSelection"
+        "key": "ctrl+alt+g",
+        "mac": "cmd+opt+g",
+        "when": "editorTextFocus"
       }
     ]
   },
@@ -145,7 +145,6 @@
     "vite": "^5.0.10"
   },
   "dependencies": {
-    "@vscode/codicons": "^0.0.36",
     "typescript": "^5.8.2",
     "yaml": "^2.4.5"
   }
