@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, RefObject } from 'react'; // Combined imports
 import { getVSCodeAPI } from '../utils/vscode';
-import { MessageType } from '../types';
+import { MessageType } from '../types'; // Keep this import
 import { SessionMetadata } from '../components/SessionList';
 
 interface UseSessionManagementResult {
@@ -14,7 +14,12 @@ interface UseSessionManagementResult {
     currentSession: SessionMetadata | null;
 }
 
-export const useSessionManagement = (isLoading: boolean): UseSessionManagementResult => {
+// Accept refs for the drawer and toggle button
+export const useSessionManagement = (
+    isLoading: boolean,
+    drawerRef: RefObject<HTMLDivElement>,
+    toggleButtonRef: RefObject<HTMLButtonElement>
+): UseSessionManagementResult => {
     const [sessions, setSessions] = useState<SessionMetadata[]>([]);
     const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
     const [showSessionDrawer, setShowSessionDrawer] = useState<boolean>(false);
@@ -80,6 +85,37 @@ export const useSessionManagement = (isLoading: boolean): UseSessionManagementRe
         setShowSessionDrawer(!showSessionDrawer);
     }, [isLoading, showSessionDrawer, fetchSessions]);
 
+    // Effect to handle clicks outside the drawer
+    useEffect(() => {
+        // Only add listener if the drawer is open
+        if (!showSessionDrawer) {
+            return;
+        }
+
+        const handleClickOutside = (event: MouseEvent) => {
+            // Check if click is outside the drawer AND outside the toggle button
+            if (
+                drawerRef.current &&
+                !drawerRef.current.contains(event.target as Node) &&
+                toggleButtonRef.current &&
+                !toggleButtonRef.current.contains(event.target as Node)
+            ) {
+                // Click was outside both, close the drawer
+                setShowSessionDrawer(false);
+            }
+        };
+
+        // Add listener on mount/when drawer opens
+        document.addEventListener('mousedown', handleClickOutside);
+        console.log('Added click outside listener'); // Debug log
+
+        // Cleanup listener on unmount/when drawer closes
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+            console.log('Removed click outside listener'); // Debug log
+        };
+    }, [showSessionDrawer, drawerRef, toggleButtonRef]); // Dependencies include refs
+
     // Set up listener for session-related events
     useEffect(() => {
         const handleMessage = (event: MessageEvent) => {
@@ -137,4 +173,4 @@ export const useSessionManagement = (isLoading: boolean): UseSessionManagementRe
         toggleSessionDrawer,
         currentSession
     };
-}; 
+};

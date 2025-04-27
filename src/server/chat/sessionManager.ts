@@ -99,24 +99,31 @@ export class SessionManager {
             backendSessions = [];
         }
 
-        // Merge local session if needed
-        let combinedSessions = backendSessions;
-        if (localSessionMeta && !backendSessions.some(s => s.id === localSessionMeta.id)) {
-            console.log(`Merging local session ${localSessionMeta.id} into fetched list`);
-            combinedSessions = [localSessionMeta, ...backendSessions]; // Prepend local session
-        } else if (!localSessionMeta && backendSessions.length === 0) {
-             console.log('No backend sessions and no active local session.');
-             combinedSessions = [];
-        } else if (localSessionMeta && backendSessions.length === 0) {
-            // API failed or returned empty, but we have a local session
-             console.log(`API fetch failed/empty, showing only local session ${localSessionMeta.id}`);
-             combinedSessions = [localSessionMeta];
+        // Determine the final list based on backend sync status
+        let finalSessions: SessionMetadata[];
+
+        if (localSessionMeta) {
+            const backendHasSynced = backendSessions.some(s => s.id === localSessionMeta.id);
+            if (backendHasSynced) {
+                // Backend has the session, use the backend list exclusively
+                console.log(`Session ${localSessionMeta.id} synced with backend. Using backend list.`);
+                finalSessions = backendSessions;
+            } else {
+                // Backend hasn't synced yet (or API failed), keep local session prepended
+                console.log(`Session ${localSessionMeta.id} not found in backend list. Prepending local session.`);
+                finalSessions = [localSessionMeta, ...backendSessions];
+            }
+        } else {
+            // No active local session, just use the backend list
+            finalSessions = backendSessions;
         }
 
+        // Ensure no duplicates (though the logic above should prevent it)
+        const uniqueSessions = Array.from(new Map(finalSessions.map(s => [s.id, s])).values());
 
-        this.sessions = combinedSessions; // Update internal state
-        this.emit(SessionEvents.SESSIONS_LOADED, combinedSessions);
-        return combinedSessions;
+        this.sessions = uniqueSessions; // Update internal state
+        this.emit(SessionEvents.SESSIONS_LOADED, uniqueSessions);
+        return uniqueSessions;
     }
 
     /**

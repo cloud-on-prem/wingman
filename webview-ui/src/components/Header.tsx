@@ -1,21 +1,23 @@
-import React from 'react';
+import React, { RefObject } from 'react'; // Import RefObject
 import { SessionMetadata } from './SessionList';
 // Import Lucide icons
-import { History, Plus } from 'lucide-react'; 
+import { History, Plus } from 'lucide-react';
 
 interface HeaderProps {
     status: string;
-    currentSession: SessionMetadata | null;
+    currentSession: SessionMetadata | null; // Keep currentSession prop if needed elsewhere, otherwise remove if unused
     onToggleSessionDrawer: () => void;
     isGenerating: boolean;
     onNewSession: () => void;
+    toggleButtonRef: RefObject<HTMLButtonElement>; // Add ref prop for the toggle button
 }
 
 export const Header: React.FC<HeaderProps> = ({
     status,
     onToggleSessionDrawer,
     isGenerating,
-    onNewSession
+    onNewSession,
+    toggleButtonRef // Destructure the ref prop
 }) => {
     // Helper to get status display text (incorporating isGenerating)
     const getDisplayStatus = (status: string, isGenerating: boolean): string => {
@@ -62,8 +64,9 @@ export const Header: React.FC<HeaderProps> = ({
                     <Plus size={16} /> {/* Use Lucide Plus icon */}
                 </button>
 
-                {/* Session History Button */}
+                {/* Session History Button - Assign the ref here */}
                 <button
+                    ref={toggleButtonRef} // Assign the ref
                     className="icon-button"
                     title="Session History"
                     onClick={onToggleSessionDrawer}
