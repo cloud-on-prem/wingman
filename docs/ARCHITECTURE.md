@@ -21,6 +21,8 @@ sequenceDiagram
     participant ChatWebview as Chat Webview
     participant GoosedAPI as `goosed` Process API
     participant AIBackend as Goose AI Backend
+    participant WkspcCtxProvider as WorkspaceContextProvider
+    participant ProblemMon as ProblemMonitor
 
     Note over User, VSCodeUI: User may or may not select code in editor
 
@@ -62,14 +64,29 @@ sequenceDiagram
     activate ExtHost
 
     Note over ExtHost: (GooseViewProvider receives message)
-    ExtHost->>ExtHost: ChatProcessor prepares request
+    ExtHost->>ExtHost: ChatProcessor prepares request (sendMessage)
+
+    %% Context Injection %%
+    activate ExtHost #LightCyan
+    ExtHost->>WkspcCtxProvider: formatContextForPrompt()
+    activate WkspcCtxProvider
+    WkspcCtxProvider-->>ExtHost: Formatted Context String
+    deactivate WkspcCtxProvider
+    Note over ExtHost: Prepend context to user message content
+    deactivate ExtHost #LightCyan
+
+    %% Problem Monitor: Capture Before %%
+    activate ExtHost #Thistle
+    ExtHost->>ProblemMon: captureDiagnosticsBeforeAction(msgId, sessionId)
+    activate ProblemMon
+    ProblemMon-->>ExtHost: Diagnostics captured
+    deactivate ProblemMon
+    deactivate ExtHost #Thistle
+
+    %% Send Request to Backend %%
     activate ExtHost #LightSkyBlue
-    alt With code reference chip
-        ExtHost->>GoosedAPI: POST /chat (stream request with message, code ref, session)
-    else With prepended code
-        Note over ExtHost: Format code as markdown in message
-        ExtHost->>GoosedAPI: POST /chat (stream request with formatted message, session)
-    end
+    Note over ExtHost: (Via ChatProcessor.sendChatRequest)
+    ExtHost->>GoosedAPI: POST /reply (stream request with context + user message, session)
     deactivate ExtHost #LightSkyBlue
     activate GoosedAPI
 
@@ -107,8 +124,78 @@ sequenceDiagram
     deactivate ExtHost
     activate ChatWebview
     Note over ChatWebview: Webview UI finalizes message display
-
     deactivate ChatWebview
+
+    %% Problem Monitor: Check After %%
+    activate ExtHost #Thistle
+    ExtHost->>ProblemMon: checkAndReportNewProblems(msgId)
+    activate ProblemMon
+    ProblemMon-->>ExtHost: problemReportString | null
+    deactivate ProblemMon
+
+    alt New problems detected (problemReportString is not null)
+        Note over ExtHost: Problems found, initiate visible fix flow
+        %% Create & Show Ack Message %%
+        ExtHost->>ExtHost: Create ackMessage ("Oops...")
+        ExtHost->>ChatWebview: Post message (MESSAGE_RECEIVED, ackMessage)
+        activate ChatWebview
+        Note over ChatWebview: UI displays ack message
+        deactivate ChatWebview
+
+        %% Create & Show Fix Request Message %%
+        ExtHost->>ExtHost: Create fixRequestMessage (with problems)
+        ExtHost->>ChatWebview: Post message (MESSAGE_RECEIVED, fixRequestMessage)
+        activate ChatWebview
+        Note over ChatWebview: UI displays fix request message
+        deactivate ChatWebview
+
+        %% Trigger Follow-up Request %%
+        ExtHost->>ExtHost: Call _sendFollowUpRequest()
+        activate ExtHost #LightSkyBlue
+        Note over ExtHost: (Via ChatProcessor.sendChatRequest with updated history)
+        ExtHost->>GoosedAPI: POST /reply (stream request with ack + fix request, session)
+        deactivate ExtHost #LightSkyBlue
+        activate GoosedAPI
+
+        GoosedAPI->>AIBackend: Forward follow-up request
+        activate AIBackend
+        AIBackend-->>GoosedAPI: Stream AI response chunks (for fix)
+        deactivate AIBackend
+        GoosedAPI-->>ExtHost: Stream response chunks
+        deactivate GoosedAPI
+        activate ExtHost
+
+        Note over ExtHost: (ChatProcessor receives stream chunks for fix)
+        ExtHost->>ChatWebview: Post message (CHAT_RESPONSE chunk)
+        activate ChatWebview
+        Note over ChatWebview: Webview UI appends chunk to fix response message
+        loop Fix Response Streaming
+            GoosedAPI-->>ExtHost: Stream response chunks
+            activate GoosedAPI
+            deactivate GoosedAPI
+            activate ExtHost
+            ExtHost->>ChatWebview: Post message (CHAT_RESPONSE chunk)
+            activate ChatWebview
+            deactivate ChatWebview
+        end
+
+        GoosedAPI-->>ExtHost: Stream finished signal
+        activate GoosedAPI
+        deactivate GoosedAPI
+
+        ExtHost->>ChatWebview: Post message (GENERATION_FINISHED)
+        deactivate ExtHost
+        activate ChatWebview
+        Note over ChatWebview: Webview UI finalizes fix response display
+        deactivate ChatWebview
+
+        Note over ExtHost: (Optionally check for problems again here)
+
+    else No new problems detected
+         Note over ExtHost: No new problems, flow ends normally
+    end
+    deactivate ExtHost #Thistle
+
 
 ```
 

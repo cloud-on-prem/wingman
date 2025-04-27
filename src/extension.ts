@@ -40,15 +40,22 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 	private readonly _serverManager: ServerManager;
 	private readonly _chatProcessor: ChatProcessor;
 	private readonly _codeReferenceManager: CodeReferenceManager;
-	private readonly _workspaceContextProvider: WorkspaceContextProvider;
+	private readonly _workspaceContextProvider: WorkspaceContextProvider; // Keep the instance variable
 	private readonly _sessionManager: SessionManager;
 
-	constructor(extensionUri: vscode.Uri, serverManager: ServerManager, chatProcessor: ChatProcessor, sessionManager: SessionManager) {
+	// Accept WorkspaceContextProvider instance in constructor
+	constructor(
+		extensionUri: vscode.Uri,
+		serverManager: ServerManager,
+		chatProcessor: ChatProcessor,
+		sessionManager: SessionManager,
+		workspaceContextProvider: WorkspaceContextProvider // Added parameter
+	) {
 		this._extensionUri = extensionUri;
 		this._serverManager = serverManager;
 		this._chatProcessor = chatProcessor;
 		this._codeReferenceManager = CodeReferenceManager.getInstance();
-		this._workspaceContextProvider = WorkspaceContextProvider.getInstance();
+		this._workspaceContextProvider = workspaceContextProvider; // Assign passed instance
 		this._sessionManager = sessionManager;
 	}
 
@@ -534,14 +541,16 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 	 * Adds the current diagnostics to the chat
 	 */
 	public async addCurrentDiagnostics() {
-		const diagnostics = this._workspaceContextProvider.getCurrentDiagnostics();
-		const formattedDiagnostics = this._workspaceContextProvider.formatDiagnostics(diagnostics);
+		// Use the correct method names from the instance
+		const problemsGrouped = this._workspaceContextProvider.getCurrentProblemsGroupedByUri();
+		const formattedDiagnostics = this._workspaceContextProvider.formatDiagnosticsList(problemsGrouped);
 		const currentFile = this._workspaceContextProvider.getCurrentFileName();
 
-		if (diagnostics.length === 0) {
+		// Check if the formatted string indicates no problems
+		if (formattedDiagnostics === "No problems found.") {
 			this._sendMessageToWebview({
-				command: MessageType.CHAT_MESSAGE,
-				text: `No issues found in ${currentFile || 'the current file'}.`
+				command: MessageType.CHAT_MESSAGE, // Assuming this command adds text to input or sends directly
+				text: `No issues found in ${currentFile || 'the current workspace'}.` // Adjusted message
 			});
 		} else {
 			this._sendMessageToWebview({
@@ -596,11 +605,17 @@ export function activate(context: vscode.ExtensionContext) {
 	// Connect chat processor to session manager
 	chatProcessor.setSessionManager(sessionManager);
 
-	// Create workspace context provider
-	const workspaceContextProvider = WorkspaceContextProvider.getInstance();
+	// Create workspace context provider instance
+	const workspaceContextProvider = new WorkspaceContextProvider(); // Instantiate directly
 
-	// Create the provider before starting the server
-	const provider = new GooseViewProvider(context.extensionUri, serverManager, chatProcessor, sessionManager);
+	// Create the provider before starting the server, passing the instance
+	const provider = new GooseViewProvider(
+		context.extensionUri,
+		serverManager,
+		chatProcessor,
+		sessionManager,
+		workspaceContextProvider // Pass the instance
+	);
 
 	// Register the Goose View Provider
 	const viewRegistration = vscode.window.registerWebviewViewProvider(
@@ -700,10 +715,11 @@ export function activate(context: vscode.ExtensionContext) {
 
 		const document = editor.document;
 		const selection = editor.selection;
+		// Get CodeReferenceManager instance (assuming it's still a singleton)
 		const codeReferenceManager = CodeReferenceManager.getInstance();
 
 		let codeReferenceToSend: CodeReference | null = null;
-		let prepayloadToSend: any = null;
+		let prepayloadToSend: any = null; // Renamed from prependedCode for clarity
 		let actionTaken = false; // Flag to track if we should focus
 
 		if (selection.isEmpty) {

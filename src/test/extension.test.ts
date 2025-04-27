@@ -29,7 +29,9 @@ suite('Extension Test Suite', () => {
 				start: sinon.stub().resolves(true),
 				stop: sinon.stub(),
 				on: sinon.stub(),
-				getStatus: sinon.stub().returns('stopped')
+				getStatus: sinon.stub().returns('stopped'),
+				// Add the missing getApiClient stub
+				getApiClient: sinon.stub().returns(null) // Return null or a basic stub object
 			};
 		});
 	});
