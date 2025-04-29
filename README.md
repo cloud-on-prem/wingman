@@ -88,4 +88,5 @@ Information for developers contributing to this extension can be found in [docs/
 
 ## License
 
-This extension is licensed under the MIT License.
+This extension is licensed under Apache-2.0.
+See the [LICENSE](./LICENSE) file for details.
