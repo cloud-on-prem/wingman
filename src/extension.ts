@@ -1,8 +1,9 @@
 // The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
-import * as vscode from 'vscode';
-import * as path from 'path';
-import * as fs from 'fs';
+ // Import the module and reference it with the alias vscode in your code below
+ import * as vscode from 'vscode';
+ import { ColorThemeKind } from 'vscode'; // Import ColorThemeKind
+ import * as path from 'path';
+ import * as fs from 'fs';
 import { ServerManager, ServerStatus, ServerEvents } from './server/serverManager';
 import { ChatProcessor, ChatEvents } from './server/chat/chatProcessor';
 import { Message, getTextContent } from './types';
@@ -52,12 +53,38 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 		this._sessionManager = sessionManager;
 	}
 
+	/**
+	 * Maps VS Code theme kind to a shiki theme identifier.
+	 * Uses 'light-plus' and 'dark-plus' as they are built-in themes in shiki
+	 * that correspond well to VS Code's default light and dark themes.
+	 * @param kind The VS Code theme kind.
+	 * @returns A shiki theme identifier string.
+	 */
+	public getShikiTheme(kind: ColorThemeKind): string { // Made public for listener access
+		switch (kind) {
+			case ColorThemeKind.Light:
+			case ColorThemeKind.HighContrastLight:
+				return 'light-plus'; // Shiki's equivalent for Light+
+			case ColorThemeKind.Dark:
+			case ColorThemeKind.HighContrast:
+				return 'dark-plus'; // Shiki's equivalent for Dark+
+			default:
+				return 'dark-plus'; // Default fallback
+		}
+	}
+
 	resolveWebviewView(
 		webviewView: vscode.WebviewView,
 		context: vscode.WebviewViewResolveContext,
 		_token: vscode.CancellationToken
-	) {
-		this._view = webviewView;
+ 	) {
+ 		this._view = webviewView;
+
+		// --- Detect and Map Theme ---
+		const activeTheme = vscode.window.activeColorTheme;
+		const shikiTheme = this.getShikiTheme(activeTheme.kind);
+		logger.info(`Detected VS Code theme kind: ${ColorThemeKind[activeTheme.kind]}, Mapped to shiki theme: ${shikiTheme}`);
+		// --- End Detect and Map Theme ---
 
 		webviewView.webview.options = {
 			// Enable scripts in the webview
@@ -111,6 +138,12 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 		this._sendMessageToWebview({
 			command: MessageType.SERVER_STATUS,
 			status: this._serverManager.getStatus()
+		});
+
+		// Send initial theme
+		this._sendMessageToWebview({
+			command: MessageType.SET_THEME, // Use the new message type
+			theme: shikiTheme
 		});
 
 		// Log that the view has been resolved
@@ -796,6 +829,17 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	});
 
+	// --- Add Theme Change Listener ---
+	const themeChangeListener = vscode.window.onDidChangeActiveColorTheme(theme => {
+		const newShikiTheme = provider.getShikiTheme(theme.kind);
+		logger.info(`VS Code theme changed. New kind: ${ColorThemeKind[theme.kind]}, Mapped shiki theme: ${newShikiTheme}`);
+		provider.sendMessageToWebview({
+			command: MessageType.SET_THEME,
+			theme: newShikiTheme
+		});
+	});
+	// --- End Theme Change Listener ---
+
 	// Add all disposables to the extension context's subscriptions
 	context.subscriptions.push(
 		viewRegistration,
@@ -805,7 +849,8 @@ export function activate(context: vscode.ExtensionContext) {
 		stopServerDisposable,
 		askAboutSelectionDisposable,
 		codeActionRegistration,
-		listSessionsDisposable
+		listSessionsDisposable,
+		themeChangeListener // Add the new listener here
 	);
 }
 

@@ -2,10 +2,9 @@ import React, { useState } from 'react';
 import { MessageContent as MessageContentType } from '../../types/index';
 import { useVSCodeMessaging } from '../../hooks/useVSCodeMessaging';
 import ReactMarkdown from 'react-markdown';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import remarkGfm from 'remark-gfm';
 import './MessageContent.css';
+import { CodeBlock } from './CodeBlock'; // Import the new CodeBlock component
 
 interface MessageContentProps {
     content: MessageContentType[];
@@ -115,17 +114,18 @@ export const MessageContentRenderer: React.FC<MessageContentProps> = ({ content 
                             <ReactMarkdown
                                 remarkPlugins={[remarkGfm]}
                                 components={{
-                                    code({ className, children, ...props }) {
-                                        // Check if this is a code block (has language class)
+                                    // Use the new CodeBlock component for fenced code blocks
+                                    // and standard `code` for inline code
+                                    code({ node, className, children, ...props }) { // Removed 'inline' prop
                                         const match = /language-(\w+)/.exec(className || '');
-                                        const isCodeBlock = !!match;
-                                        const codeContent = String(children).replace(/\n$/, '');
-
-                                        // Create unique id for this code block
-                                        const blockId = `code-block-${index}-${match ? match[1] : 'text'}-${codeContent.length}`;
-                                        const isCopied = copiedCodeBlock === blockId;
+                                        const isCodeBlock = !!match; // Determine if it's a block based on class
 
                                         if (isCodeBlock) {
+                                            // Render fenced code blocks using CodeBlock
+                                            const codeContent = String(children).replace(/\n$/, '');
+                                            const blockId = `code-block-${index}-${className || 'text'}-${codeContent.length}`;
+                                            const isCopied = copiedCodeBlock === blockId;
+
                                             return (
                                                 <div className="code-block-wrapper">
                                                     <div className="code-block-header">
@@ -142,23 +142,16 @@ export const MessageContentRenderer: React.FC<MessageContentProps> = ({ content 
                                                             <i className={`codicon ${isCopied ? 'codicon-check' : 'codicon-copy'}`}></i>
                                                         </button>
                                                     </div>
-                                                    <SyntaxHighlighter
-                                                        language={match ? match[1] : ''}
-                                                        style={vscDarkPlus}
-                                                        PreTag="div"
-                                                        className="code-block-content"
-                                                    >
-                                                        {codeContent}
-                                                    </SyntaxHighlighter>
+                                                    {/* Pass props down to CodeBlock */}
+                                                    <CodeBlock className={className} {...props}>
+                                                        {children}
+                                                    </CodeBlock>
                                                 </div>
                                             );
+                                        } else {
+                                            // Render inline code as standard `code` element
+                                            return <code className={className} {...props}>{children}</code>;
                                         }
-
-                                        return (
-                                            <code className={className} {...props}>
-                                                {children}
-                                            </code>
-                                        );
                                     }
                                 }}
                             >
@@ -216,4 +209,4 @@ export const MessageContentRenderer: React.FC<MessageContentProps> = ({ content 
             })}
         </>
     );
-}; 
+};

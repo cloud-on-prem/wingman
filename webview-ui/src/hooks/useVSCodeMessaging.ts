@@ -45,13 +45,14 @@ interface UseVSCodeMessagingResult {
     currentMessageId: string | null;
     codeReferences: any[]; // Using any for now, should import CodeReference type
     // Remove prependedCode state, handle via codeReferences
-    // prependedCode: PrependedCode | null; 
-    // hasPrependedCode: boolean; 
+    // prependedCode: PrependedCode | null;
+    // hasPrependedCode: boolean;
     sendChatMessage: (text: string, refs: any[], sessionId: string | null) => void;
     stopGeneration: () => void;
     restartServer: () => void;
     // Remove clearPrependedCode as it's no longer needed
-    // clearPrependedCode: () => void; 
+    // clearPrependedCode: () => void;
+    shikiTheme: string; // Added state for shiki theme
 }
 
 // Define a type for the temporary reference used for prepended code
@@ -74,9 +75,10 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
     // State now holds both regular CodeReferences and TemporaryPrependedRef
     const [codeReferences, setCodeReferences] = useState<(any | TemporaryPrependedRef)[]>([]); 
     // Remove prependedCode state
-    // const [prependedCode, setPrependedCode] = useState<PrependedCode | null>(null); 
+    // const [prependedCode, setPrependedCode] = useState<PrependedCode | null>(null);
     const [processedMessageIds, setProcessedMessageIds] = useState<Set<string>>(new Set());
-    
+    const [shikiTheme, setShikiTheme] = useState<string>('dark-plus'); // Default theme
+
     // Remove derived state and clear function
     // const hasPrependedCode = prependedCode !== null;
     // const clearPrependedCode = useCallback(() => { ... }, [prependedCode]);
@@ -479,6 +481,12 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
                         }
                     }, 100); // Slight delay to ensure React has time to process state changes
                     break;
+                case MessageType.SET_THEME:
+                    if (message.theme && typeof message.theme === 'string') {
+                        console.log('Setting shiki theme:', message.theme);
+                        setShikiTheme(message.theme);
+                    }
+                    break;
                 default:
                     // Handle unknown message types
                     console.warn('Unknown message type:', message.command);
@@ -515,11 +523,12 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
         currentMessageId,
         codeReferences,
         // Remove prependedCode related exports
-        // prependedCode, 
-        // hasPrependedCode, 
+        // prependedCode,
+        // hasPrependedCode,
         sendChatMessage,
         stopGeneration,
         restartServer,
-        // clearPrependedCode 
+        // clearPrependedCode
+        shikiTheme // Export the theme state
     };
 };
