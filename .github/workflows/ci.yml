@@ -51,13 +51,14 @@ jobs:
       
       - name: Run Tests with Xvfb
         run: |
-          xvfb-run -a npm run test-all
+          # Run standard tests and the package activation test
+          xvfb-run -a sh -c "npm run test:all && npm run test:package"
 
       - name: Build webview
-        run: npm run build-webview
+        run: npm run build:webview # Use renamed script
 
       - name: Compile extension
-        run: npm run compile
+        run: npm run compile # This already includes build:webview
 
   release:
     name: Build and Release Extension
@@ -107,7 +108,8 @@ jobs:
           mkdir -p dist
           # Use xvfb for compile step in case it launches VS Code
           xvfb-run -a npm run compile
-          npx @vscode/vsce package --no-dependencies --no-yarn -o dist/goose-vscode-${{ steps.version.outputs.version }}.vsix
+          # Package using vsce directly, dependencies are bundled by esbuild
+          npx @vscode/vsce package --no-yarn -o dist/goose-vscode-${{ steps.version.outputs.version }}.vsix
           
           # Verify the package was created
           if [ ! -f "dist/goose-vscode-${{ steps.version.outputs.version }}.vsix" ]; then
@@ -135,4 +137,4 @@ jobs:
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
-          npx vsce publish --pat $VSCE_PAT 
+          npx vsce publish --pat $VSCE_PAT
