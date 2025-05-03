@@ -1,44 +1,43 @@
 #!/bin/bash
 
-# Script to help release a new version of the VS Code extension
+# Script to bump the version, update lockfile, commit, and tag for a new release.
+
+set -e # Exit immediately if a command exits with a non-zero status.
 
 # Check if a version is provided
 if [ -z "$1" ]; then
-  echo "Usage: ./release.sh <version>"
-  echo "Example: ./release.sh 0.1.0"
+  echo "Usage: ./scripts/release.sh <version>"
+  echo "Example: ./scripts/release.sh 0.1.0"
   exit 1
 fi
 
 VERSION=$1
+TAG_NAME="vscode-v$VERSION"
+
+echo "Bumping version to $VERSION..."
 
 # Update the version in package.json
-sed -i.bak "s/\"version\": \"[0-9]*\.[0-9]*\.[0-9]*\"/\"version\": \"$VERSION\"/" package.json
-rm package.json.bak
+# Using node to parse/update JSON is safer than sed
+node -e "
+  const fs = require('fs');
+  const pkgPath = 'package.json';
+  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+  pkg.version = '$VERSION';
+  fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+  console.log('Updated package.json version to', pkg.version);
+"
 
-echo "Building and packaging extension..."
-npm run package:dist
+echo "Updating package-lock.json..."
+npm install
 
-# Verify the .vsix file was created
-if [ -f "dist/goose-vscode-$VERSION.vsix" ]; then
-  echo "✅ Extension packaged successfully: dist/goose-vscode-$VERSION.vsix"
-else
-  echo "❌ Packaging failed. Let's try with verbose output:"
-  echo "Running with verbose flag..."
-  mkdir -p dist
-  npx @vscode/vsce package --no-dependencies --no-yarn -o dist/goose-vscode-$VERSION.vsix --verbose
-  
-  if [ -f "dist/goose-vscode-$VERSION.vsix" ]; then
-    echo "✅ Extension packaged successfully on second attempt: dist/goose-vscode-$VERSION.vsix"
-  else
-    echo "❌ Failed to create the .vsix file. See errors above."
-    exit 1
-  fi
-fi
+echo "Staging and committing version bump..."
+git add package.json package-lock.json
+git commit -m "Bump vscode extension to v$VERSION"
+
+echo "Creating git tag $TAG_NAME..."
+git tag "$TAG_NAME"
 
 echo ""
-echo "To release this version, you can:"
-echo "1. Commit the changes: git commit -am \"Bump vscode extension to v$VERSION\""
-echo "2. Tag the release: git tag vscode-v$VERSION"
-echo "3. Push the changes: git push && git push --tags"
-echo ""
-echo "This will trigger the GitHub workflow to create a release with the packaged extension." 
+echo "✅ Version bumped to $VERSION, changes committed, and tag '$TAG_NAME' created."
+echo "Ready to be published. Run 'git push && git push --tags' to push the commit and tag."
+echo "The GitHub workflow should then create a release."

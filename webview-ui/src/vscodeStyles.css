@@ -263,7 +263,7 @@
 /* Improved code block rendering */
 .message-text pre {
     margin: 0.75em 0 !important;
-    padding: 0 !important;
+    padding: 0 !important; /* Shiki adds its own padding */
     background-color: var(--vscode-textCodeBlock-background) !important;
     border: 1px solid var(--vscode-widget-border) !important;
     border-radius: 4px !important;
@@ -285,23 +285,7 @@
     width: 100% !important;
     max-width: 100% !important;
     margin: 0.75em 0 !important;
-    padding: 0 !important;
-}
-
-/* The actual syntax highlighted content */
-.react-syntax-highlighter-pre {
-    margin: 0 !important;
-    padding: 1em !important;
-    background-color: var(--vscode-textCodeBlock-background) !important;
-    border-radius: 4px !important;
-    width: 100% !important;
-    font-family: var(--vscode-editor-font-family) !important;
-    font-size: var(--vscode-editor-font-size) !important;
-    word-break: normal !important;
-    white-space: pre !important;
-    overflow-x: auto !important;
-    line-height: 1.5 !important;
-    tab-size: 4 !important;
+    padding: 0 !important; /* Shiki adds its own padding */
 }
 
 /* Ensure any code containers are full width */
@@ -311,15 +295,6 @@
     width: 100% !important;
     max-width: 100% !important;
     box-sizing: border-box !important;
-}
-
-/* Line numbers in code blocks */
-.linenumber {
-    color: var(--vscode-editorLineNumber-foreground) !important;
-    opacity: 0.7 !important;
-    padding-right: 0.5em !important;
-    text-align: right !important;
-    min-width: 3.5em !important;
 }
 
 .message-actions {
@@ -713,7 +688,7 @@
     border: 1px solid var(--vscode-widget-border);
     border-radius: 4px;
     margin: 0.5em 0;
-    padding: 1em;
+    padding: 1em; /* Keep padding for generic pre */
     overflow: auto;
     width: 100% !important;
     display: block !important;
@@ -722,7 +697,7 @@
 /* Code blocks (pre > code) */
 .message-text pre>code {
     display: block !important;
-    padding: 0.5em;
+    padding: 0.5em; /* Keep padding for generic pre > code */
     overflow-x: auto;
     white-space: pre;
     background-color: var(--vscode-textCodeBlock-background) !important;
@@ -732,41 +707,6 @@
     width: 100% !important;
     max-width: 100% !important;
     border: none;
-}
-
-/* Enhanced styles for SyntaxHighlighter component */
-.message-text .react-syntax-highlighter-line-number {
-    color: var(--vscode-editorLineNumber-foreground) !important;
-    opacity: 0.7;
-}
-
-.message-text pre.prism-code {
-    margin: 1em 0 !important;
-    background-color: var(--vscode-textCodeBlock-background) !important;
-    border-radius: 4px !important;
-    border: 1px solid var(--vscode-widget-border) !important;
-    font-family: var(--vscode-editor-font-family) !important;
-    font-size: var(--vscode-editor-font-size) !important;
-    display: block !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    overflow-x: auto !important;
-}
-
-/* This ensures the React Syntax Highlighter wrapper respects width */
-.message-text div:has(> pre.prism-code) {
-    width: 100% !important;
-    max-width: 100% !important;
-    margin: 0 !important;
-    padding: 0 !important;
-}
-
-/* Fix for code blocks showing extra unwanted padding */
-.message-text pre>code,
-.message-text .react-syntax-highlighter-pre {
-    padding: 0.5em !important;
-    margin: 0 !important;
-    background: var(--vscode-textCodeBlock-background) !important;
 }
 
 /* Inline code */
@@ -816,15 +756,6 @@
 .message-text div[style]:has(> code:not(pre code)) {
     display: inline !important;
     width: auto !important;
-}
-
-/* For SyntaxHighlighter component */
-.message-text .prism-code {
-    background-color: transparent !important;
-    border-radius: 4px;
-    margin: 0.5em 0;
-    font-family: var(--vscode-editor-font-family) !important;
-    font-size: var(--vscode-editor-font-size) !important;
 }
 
 /* Blockquotes */
@@ -1338,40 +1269,6 @@
 
 .copy-button .codicon {
     font-size: 14px;
-}
-
-/* Fix specific issues with syntax highlighting containers */
-.message-text .react-syntax-highlighter-pre {
-    margin: 0 !important;
-    padding: 1em !important;
-    border-radius: 4px !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    word-break: normal !important;
-    white-space: pre !important;
-    overflow-x: auto !important;
-    font-family: var(--vscode-editor-font-family) !important;
-    font-size: var(--vscode-editor-font-size) !important;
-    line-height: 1.5 !important;
-    tab-size: 4 !important;
-}
-
-/* Fix for the SyntaxHighlighter container */
-.message-text pre.prism-code,
-.message-text pre.language-javascript,
-.message-text pre.language-typescript,
-.message-text pre.language-json,
-.message-text pre.language-python,
-.message-text pre.language-html,
-.message-text pre.language-css,
-.message-text pre[class*="language-"] {
-    margin: 1em 0 !important;
-    padding: 0 !important;
-    background-color: var(--vscode-textCodeBlock-background) !important;
-    border: 1px solid var(--vscode-widget-border) !important;
-    border-radius: 4px !important;
-    width: 100% !important;
-    overflow-x: auto !important;
 }
 
 /* Fix for ReactMarkdown container of code blocks */

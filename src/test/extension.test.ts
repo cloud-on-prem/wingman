@@ -95,8 +95,8 @@ suite('Extension Test Suite', () => {
 			// Check that context.subscriptions was updated (command disposables should be pushed)
 			assert.strictEqual(
 				context.subscriptions?.length,
-				9,
-				'Expected 9 subscriptions to be added to context'
+				10, // Updated from 9 to 10 to account for themeChangeListener
+				'Expected 10 subscriptions to be added to context'
 			);
 		} finally {
 			// Restore the stubs

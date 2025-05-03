@@ -18,7 +18,7 @@ For architectural details, see [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 The extension uses a multi-step build process defined in `package.json` scripts:
 
-1.  **`npm run build:extension`**: Uses `esbuild` to bundle the main extension code (`src/extension.ts` and its direct/indirect imports) into a single file (`out/extension.js`) with a sourcemap. This significantly reduces the package size and improves load times. The `vscode` module is marked as external as it's provided by the VS Code runtime.
+1.  **`npm run build:extension`**: Uses `esbuild` to bundle the main extension code (`src/extension.ts` and its direct/indirect imports) into a single file (`out/extension.js`) with a sourcemap. This significantly reduces the package size and improves load times. The `vscode` module is marked as external as it's provided by the VS Code runtime. Dependencies listed in `devDependencies` (like `yaml`) should be correctly bundled.
 2.  **`npm run compile:tests`**: Uses the TypeScript compiler (`tsc`) based on the specific `tsconfig.tests.json` configuration. This compiles *only* the test files (`src/test/**/*.ts`) into JavaScript files within the `out/test/` directory, preserving the test file structure. This ensures test files are compiled separately from the main extension bundle and placed where the test runner expects them.
 3.  **`npm run build:webview`**: Navigates to the `webview-ui/` directory, installs its dependencies, and runs its build process (using Vite) to create the optimized chat interface assets in `webview-ui/dist/`.
 4.  **`npm run compile`**: Orchestrates the above steps, running `build:extension`, then `compile:tests`, then `build:webview`. This is the main script used for building the entire extension before testing or packaging. It ensures the main bundle is created first, followed by the separate compilation of tests, and finally the webview build.
@@ -61,36 +61,42 @@ For testing the webview UI components directly:
 
 ## Packaging and Releasing
 
-### Packaging the Extension
+### Packaging the Extension (Manual)
 
-Run packaging commands from the project root.
+While the official release packaging is handled by the GitHub workflow, you can manually package the extension for local testing or distribution using commands run from the project root.
 
-The extension can be packaged into a `.vsix` file for distribution. There are several npm scripts available for packaging:
+The available npm scripts use `vsce` (VS Code Extension Manager) and rely on the standard build (`npm run compile`):
 
-- `npm run package` - Runs tests, then packages the extension
-- `npm run package:dist` - Runs tests, then packages the extension into the `dist` directory with version number
-- `npm run package:skip-tests` - Skips tests and packages the extension
+- `npm run package`: Runs linting and all tests, then compiles and packages the extension into a `.vsix` file in the project root.
+- `npm run package:dist`: Runs linting and all tests, then compiles and packages the extension into the `dist/` directory, naming the file `goose-vscode-[version].vsix`.
+- `npm run package:skip-tests`: Skips linting and tests, compiles, and packages the extension into a `.vsix` file in the project root.
 
-To package the extension for distribution:
+Example for creating a distributable package in the `dist` folder:
 
 ```bash
 npm run package:dist
 ```
 
-This will create a `.vsix` file in the `dist` directory with the name `goose-vscode-[version].vsix`.
+This will create a `.vsix` file in the `dist/` directory with the name `goose-vscode-[version].vsix`.
 
 ### Using the Release Script
 
-A helper script is provided to simplify the release process:
+A helper script is provided to automate the version bumping, committing, and tagging process:
 
 ```bash
-./scripts/release.sh 0.1.0  # Replace with your desired version
+./scripts/release.sh <new_version>
+# Example: ./scripts/release.sh 0.1.0
 ```
 
-This script:
-1. Updates the version in `package.json`
-2. Packages the extension to the `dist` directory
-3. Provides instructions for creating a Git tag and pushing to GitHub
+This script performs the following actions:
+1. Updates the `version` in `package.json`.
+2. Runs `npm install` to update `package-lock.json`.
+3. Stages `package.json` and `package-lock.json`.
+4. Commits the changes with the message "Bump vscode extension to v<new_version>".
+5. Creates a Git tag named `vscode-v<new_version>`.
+6. Prints a confirmation message and reminds you to push the commit and tag (`git push && git push --tags`).
+
+**Note:** This script no longer handles packaging. Packaging is now done automatically by the GitHub release workflow.
 
 ### GitHub Release Workflow
 
@@ -114,13 +120,13 @@ Since direct commits to the main branch are restricted, follow this process for 
 
 2. Update the version in `package.json` and make any other necessary changes
    ```bash
-   ./scripts/release.sh 0.1.0  # Creates the package and updates version
+   ./scripts/release.sh 0.1.0  # Updates version, runs npm install, commits, and tags
    ```
 
-3. Commit the changes:
+3. Push the commit and the new tag:
    ```bash
-   git add .
-   git commit -m "Bump vscode extension to v0.1.0"
+   git push origin release/vscode-v0.1.0
+   # Do NOT push the tag from the feature branch
    ```
 
 4. Create a pull request and get it reviewed/approved
@@ -131,13 +137,15 @@ Since direct commits to the main branch are restricted, follow this process for 
    git pull
    ```
 
-6. Create and push the tag from the main branch:
+6. Push the tag **from the main branch**:
    ```bash
-   git tag vscode-v0.1.0
-   git push origin vscode-v0.1.0
+   # Ensure you are on the main branch and it's up-to-date first!
+   # git checkout main
+   # git pull
+   git push origin vscode-v0.1.0 # Push the specific tag created by the script
    ```
 
-This will trigger the GitHub workflow to create a release with the packaged extension.
+Pushing the tag (e.g., `vscode-v0.1.0`) from the `main` branch triggers the GitHub workflow to build, package, and create a release.
 
 The workflow can also be triggered manually from the GitHub Actions tab, where you can specify the version to release.
 

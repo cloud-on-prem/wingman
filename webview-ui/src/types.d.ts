@@ -1,6 +1,3 @@
-declare module 'react-syntax-highlighter';
-declare module 'react-syntax-highlighter/dist/esm/styles/prism';
-
 export enum MessageType {
     HELLO = 'hello',
     CHAT_RESPONSE = 'chatResponse',
@@ -17,4 +14,4 @@ export enum MessageType {
     REMOVE_CODE_REFERENCE = 'removeCodeReference',
     SESSION_LOADED = 'sessionLoaded',
     SESSIONS_LIST = 'sessionsList'
-} 
+}

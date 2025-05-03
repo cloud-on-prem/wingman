@@ -9,6 +9,7 @@ The UI is built using:
 - Vite for build tooling
 - Vitest for testing
 - Tailwind CSS for styling
+- Shiki for syntax highlighting
 
 ### Components
 
@@ -19,6 +20,8 @@ The application consists of the following key components:
 - **SessionIndicator**: Shows the current session and provides a way to toggle the session drawer
 - **SessionList**: Displays a list of available sessions and allows switching between them
 - **WorkspaceContext**: Provides context information about the current workspace
+- **ShikiContext**: Manages the Shiki highlighter instance and theme synchronization
+- **CodeBlock**: Renders syntax-highlighted code blocks using Shiki
 
 ## Testing
 
@@ -83,4 +86,4 @@ To build the project:
 
 ```bash
 npm run build
-``` 
+```
