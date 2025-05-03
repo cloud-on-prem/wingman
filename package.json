@@ -117,7 +117,7 @@
     "watch:tests": "npm run compile:tests -- --watch",
     "compile": "npm run build:extension && npm run compile:tests && npm run build:webview",
     "watch": "npm-run-all --parallel watch:extension watch:tests dev:webview",
-    "pretest": "npm run compile && npm run lint",
+    "pretest": "npm run clean && npm run compile && npm run lint",
     "lint": "eslint src",
     "test": "vscode-test",
     "test:package": "node ./out/test/test/runPackageTest.js",

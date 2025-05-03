@@ -10,7 +10,8 @@ async function main() {
         const extensionDevelopmentPath = path.resolve(__dirname, '../../');
 
         // The path to the *compiled* test runner script in the output directory
-        const extensionTestsPath = path.resolve(__dirname, '../../out/test/suite/index');
+        // Should match the structure resulting from tsconfig.tests.json (rootDir: 'src', outDir: 'out/test')
+        const extensionTestsPath = path.resolve(__dirname, '../../out/test/test/suite/index');
 
         // Additional runtime options to reduce noise
         const additionalOptions = {

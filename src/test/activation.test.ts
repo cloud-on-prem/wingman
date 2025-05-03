@@ -49,5 +49,20 @@ suite('Packaged Extension Activation Test Suite', () => {
 		// 4. Final check: Assert that the extension is now definitively active
 		assert.ok(extension.isActive, 'Extension should be active after activation attempt.');
 		console.log(`Extension '${extensionId}' confirmed active.`);
+
+		// 5. Verify core bundled dependency (yaml) is accessible
+		console.log(`Verifying bundled 'yaml' dependency...`);
+		try {
+			// Attempt to require and use the yaml module directly
+			// This should work if esbuild bundled it correctly
+			const YAML = require('yaml');
+			const testYaml = 'key: value';
+			const parsed = YAML.parse(testYaml);
+			assert.strictEqual(parsed.key, 'value', 'YAML parsing failed');
+			console.log(`Successfully required and used 'yaml' module.`);
+		} catch (err) {
+			console.error(`Failed to require or use bundled 'yaml' module:`, err);
+			assert.fail(`Bundled 'yaml' module is not functional: ${err}`);
+		}
 	});
 });
