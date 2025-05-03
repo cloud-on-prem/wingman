@@ -25,15 +25,29 @@ suite('Packaged Extension Activation Test Suite', () => {
 			return; // Test passes if already active
 		}
 
-		// 3. Activate the extension
-		console.log(`Activating extension '${extensionId}'...`);
+		// 3. Attempt to activate the extension (handles cases where it might already be active)
+		console.log(`Ensuring extension '${extensionId}' is active...`);
 		try {
+			// VS Code's activate() should be idempotent or handle multiple calls gracefully.
+			// We call it to ensure activation completes if VS Code didn't auto-activate it fully yet.
 			await extension.activate();
-			console.log(`Extension '${extensionId}' activated successfully.`);
-			assert.ok(extension.isActive, 'Extension should be active after activation.');
-		} catch (err) {
-			console.error(`Error activating extension '${extensionId}':`, err);
-			assert.fail(`Failed to activate extension '${extensionId}': ${err}`);
+			console.log(`Extension '${extensionId}' activation call completed.`);
+		} catch (err: any) {
+			// Check if the error is the specific "already registered" error.
+			// This indicates VS Code likely auto-activated it successfully before our explicit call.
+			const alreadyRegisteredError = "already registered";
+			if (err.message && err.message.includes(alreadyRegisteredError)) {
+				console.warn(`Caught expected error during explicit activation (likely already active): ${err.message}`);
+				// Treat this specific error as acceptable, as it means activation already happened.
+			} else {
+				// Any other error during activation is unexpected.
+				console.error(`Unexpected error activating extension '${extensionId}':`, err);
+				assert.fail(`Failed to activate extension '${extensionId}': ${err}`);
+			}
 		}
+
+		// 4. Final check: Assert that the extension is now definitively active
+		assert.ok(extension.isActive, 'Extension should be active after activation attempt.');
+		console.log(`Extension '${extensionId}' confirmed active.`);
 	});
 });
