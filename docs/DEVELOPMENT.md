@@ -10,9 +10,18 @@ For architectural details, see [ARCHITECTURE.md](./ARCHITECTURE.md).
 2. Navigate to the project root directory
 3. Install dependencies: `npm install`
 4. Install webview dependencies: `cd webview-ui && npm install && cd ..`
-5. Build the webview: `npm run build-webview` (or use `npm run compile` which includes this)
+5. Build the extension and webview: `npm run compile`
 6. Open the project root in VSCode: `code .`
-7. Press F5 to start debugging
+7. Press F5 to start debugging (this will usually run the `compile` script automatically based on `.vscode/launch.json` preLaunchTask).
+
+## Build Process
+
+The extension uses a multi-step build process defined in `package.json` scripts:
+
+1.  **`npm run build-extension`**: Uses `esbuild` to bundle the main extension code (`src/extension.ts` and its direct/indirect imports) into a single file (`out/extension.js`) with a sourcemap. This significantly reduces the package size and improves load times. The `vscode` module is marked as external as it's provided by the VS Code runtime.
+2.  **`npm run compile-tests`**: Uses the TypeScript compiler (`tsc`) based on `tsconfig.json` to compile all remaining TypeScript files in `src/` (including tests, types, utils not bundled by esbuild) into JavaScript files in the `out/` directory, preserving the directory structure. This is necessary for running tests and potentially for parts of the extension not covered by the main bundle.
+3.  **`npm run build-webview`**: Navigates to the `webview-ui/` directory, installs its dependencies, and runs its build process (using Vite) to create the optimized chat interface assets in `webview-ui/dist/`.
+4.  **`npm run compile`**: Orchestrates the above steps, running `build-extension`, then `compile-tests`, then `build-webview`. This is the main script used for building the entire extension before testing or packaging.
 
 ## Testing
 
@@ -133,4 +142,4 @@ The workflow can also be triggered manually from the GitHub Actions tab, where y
 
 ## Known Issues
 
-Refer to the [GitHub issues page](https://github.com/cloud-on-prem/goose/issues) for any known issues related to the VSCode extension. 
+Refer to the [GitHub issues page](https://github.com/cloud-on-prem/goose/issues) for any known issues related to the VSCode extension.
