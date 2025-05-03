@@ -18,10 +18,10 @@ For architectural details, see [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 The extension uses a multi-step build process defined in `package.json` scripts:
 
-1.  **`npm run build-extension`**: Uses `esbuild` to bundle the main extension code (`src/extension.ts` and its direct/indirect imports) into a single file (`out/extension.js`) with a sourcemap. This significantly reduces the package size and improves load times. The `vscode` module is marked as external as it's provided by the VS Code runtime.
-2.  **`npm run compile-tests`**: Uses the TypeScript compiler (`tsc`) based on `tsconfig.json` to compile all remaining TypeScript files in `src/` (including tests, types, utils not bundled by esbuild) into JavaScript files in the `out/` directory, preserving the directory structure. This is necessary for running tests and potentially for parts of the extension not covered by the main bundle.
-3.  **`npm run build-webview`**: Navigates to the `webview-ui/` directory, installs its dependencies, and runs its build process (using Vite) to create the optimized chat interface assets in `webview-ui/dist/`.
-4.  **`npm run compile`**: Orchestrates the above steps, running `build-extension`, then `compile-tests`, then `build-webview`. This is the main script used for building the entire extension before testing or packaging.
+1.  **`npm run build:extension`**: Uses `esbuild` to bundle the main extension code (`src/extension.ts` and its direct/indirect imports) into a single file (`out/extension.js`) with a sourcemap. This significantly reduces the package size and improves load times. The `vscode` module is marked as external as it's provided by the VS Code runtime.
+2.  **`npm run compile:tests`**: Uses the TypeScript compiler (`tsc`) based on `tsconfig.json` to compile all remaining TypeScript files in `src/` (including tests, types, utils not bundled by esbuild) into JavaScript files in the `out/` directory, preserving the directory structure. This is necessary for running tests and potentially for parts of the extension not covered by the main bundle.
+3.  **`npm run build:webview`**: Navigates to the `webview-ui/` directory, installs its dependencies, and runs its build process (using Vite) to create the optimized chat interface assets in `webview-ui/dist/`.
+4.  **`npm run compile`**: Orchestrates the above steps, running `build:extension`, then `compile:tests`, then `build:webview`. This is the main script used for building the entire extension before testing or packaging.
 
 ## Testing
 
@@ -29,9 +29,10 @@ The extension uses a multi-step build process defined in `package.json` scripts:
 
 Run tests from the project root:
 
-- Run all tests (extension + webview): `npm run test-all`
+- Run all tests (extension + webview): `npm run test:all`
 - Run only extension tests: `npm run test`
-- Run only webview tests: `npm run test-webview`
+- Run only webview tests: `npm run test:webview`
+- Run packaged activation test: `npm run test:package` (Note: This runs against the packaged `.vsix` and might not be suitable for all CI environments due to VS Code instance requirements).
 
 ### Writing Tests
 
