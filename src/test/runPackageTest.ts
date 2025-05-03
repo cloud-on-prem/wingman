@@ -11,22 +11,22 @@ async function main() {
     try {
         console.log('Starting package integration test...');
 
-        // 1. Get package info
-        const packageJsonPath = path.resolve(__dirname, '../../package.json');
+        // 1. Get package info (Use paths relative to project root where the script is invoked from)
+        const packageJsonPath = './package.json';
         const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
         // const packageName = packageJson.name; // Not used for VSIX name construction here
         const packageVersion = packageJson.version;
         // Construct the VSIX name to match the output of the 'package:dist' script
         const vsixName = `goose-vscode-${packageVersion}.vsix`;
-        const vsixDistDir = path.resolve(__dirname, '../../dist');
+        const vsixDistDir = './dist'; // Relative to project root
         const vsixPath = path.join(vsixDistDir, vsixName); // Expected path after packaging
 
         console.log(`Expecting VSIX: ${vsixPath}`);
 
         // 2. Run the package:dist command
         console.log('Packaging extension...');
-        // Run from the project root directory
-        execSync('npm run package:dist', { cwd: path.resolve(__dirname, '../../'), stdio: 'inherit' });
+        // Run from the project root directory (cwd defaults to process.cwd() which is project root)
+        execSync('npm run package:dist', { stdio: 'inherit' });
         console.log('Packaging complete.');
 
         // 3. Check if VSIX exists
@@ -36,10 +36,11 @@ async function main() {
         console.log(`Found VSIX: ${vsixPath}`);
 
         // 4. Set up VS Code test environment options
-        const extensionDevelopmentPath = path.resolve(__dirname, '../../'); // Project root
-        // Point to the *compiled* suite runner, which will handle running the correct test(s)
-        const extensionTestsPath = path.resolve(__dirname, '../../out/test/suite/index.js');
-        const testWorkspace = path.resolve(__dirname, '../../test-workspace'); // Optional: use a specific workspace
+        const projectRoot = path.resolve(__dirname, '../../../'); // Go up 3 levels from out/test/test
+        const extensionDevelopmentPath = projectRoot;
+        // Point to the *compiled* suite runner using an absolute path from project root
+        const extensionTestsPath = path.join(projectRoot, 'out/test/test/suite/index.js'); // Absolute path
+        const testWorkspace = path.join(projectRoot, 'test-workspace'); // Absolute path
         // Create a temporary directory for user data to ensure clean state
         userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vscode-test-user-data-'));
 
