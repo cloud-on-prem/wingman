@@ -2,7 +2,7 @@
   "name": "wingman-goose",
   "displayName": "Wingman Goose",
   "description": "Goose AI for VSCode",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "repository": {
     "type": "git",
     "url": "https://github.com/cloud-on-prem/wingman"
