@@ -44,38 +44,38 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           token: ${{ secrets.GITHUB_TOKEN }} # Use default token for PR creation
+          skip-labeling: true # Skip adding labels to the PR
 
   test:
     name: Lint and Test
     runs-on: ubuntu-latest
     # Run tests on pushes to main AND on pull requests targeting main
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.base_ref == 'main')
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
-      
+
       - name: Install Dependencies
         run: |
           npm install --no-fund --no-audit
           cd webview-ui
           npm install --no-fund --no-audit
-      
+
       - name: Lint
         run: |
           npm run lint
-      
+
       - name: Install Xvfb
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb
-      
+
       - name: Run Tests with Xvfb
         run: |
           # Run standard tests and the package activation test
@@ -89,15 +89,14 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     # IMPORTANT: Only run when a release tag is pushed by release-please
-    if: startsWith(github.ref, 'refs/tags/vscode-v') 
-    
+    if: startsWith(github.ref, 'refs/tags/vscode-v')
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
         # Ensure we checkout the code at the specific tag
         with:
-          ref: ${{ github.ref }} 
-      
+          ref: ${{ github.ref }}
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -111,7 +110,7 @@ jobs:
           VERSION="${GITHUB_REF#refs/tags/vscode-v}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Using version: $VERSION"
-      
+
       - name: Install Dependencies (Root)
         run: npm ci --no-fund --no-audit # Use ci for faster, reliable installs
 
@@ -129,20 +128,20 @@ jobs:
           # Use the version extracted from the tag
           PACKAGE_FILENAME="dist/goose-vscode-${{ steps.version.outputs.version }}.vsix"
           npx @vscode/vsce package --no-yarn -o "$PACKAGE_FILENAME"
-          
+
           # Verify the package was created
           if [ ! -f "$PACKAGE_FILENAME" ]; then
             echo "Failed to create the VSIX package: $PACKAGE_FILENAME"
             exit 1
           fi
           ls -l dist # List contents of dist for verification
-      
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         # No need for 'if' here, job only runs on tag push
         with:
           # Use the tag created by release-please
-          tag_name: ${{ github.ref_name }} 
+          tag_name: ${{ github.ref_name }}
           # Let release-please generate notes in the PR, just upload assets here
           generate_release_notes: false # Changelog is maintained separately
           files: dist/*.vsix
@@ -152,7 +151,7 @@ jobs:
 
       - name: Publish to VS Code Marketplace
         # Ensure VSCE_PAT secret is configured in GitHub secrets
-        if: success() && env.VSCE_PAT != null 
+        if: success() && env.VSCE_PAT != null
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
