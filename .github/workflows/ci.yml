@@ -7,8 +7,8 @@ permissions:
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
+  # pull_request: # Remove PR trigger for release-please, it should run on main after merge
+  #   branches: [ main ]
   # workflow_dispatch will be handled by the release job's 'if' condition
   # tag push will be handled by the release job's 'if' condition
   workflow_dispatch: # Keep for now, might remove later
@@ -27,17 +27,27 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: google-github-actions/release-please-action@v4
+      # Need to check out the code so the action can find the config files
+      # Fetch full history for release-please
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
-          config-file: release-please-config.json
+          fetch-depth: 0 # Fetch all history for release-please
+      # Debug: List files to confirm config exists
+      - name: List files in workspace
+        run: ls -la
+      # Use the recommended action name
+      # Explicitly specify manifest file again, just in case auto-detect failed
+      - uses: googleapis/release-please-action@v4
+        with:
           manifest-file: .release-please-manifest.json
           token: ${{ secrets.GITHUB_TOKEN }} # Use default token for PR creation
 
   test:
     name: Lint and Test
     runs-on: ubuntu-latest
-    # Only run on PRs or main branch pushes (release-please runs separately)
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    # Run tests on pushes to main AND on pull requests targeting main
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.base_ref == 'main')
 
     steps:
       - name: Checkout Repository
