@@ -7,8 +7,8 @@ permissions:
 on:
   push:
     branches: [ main ]
-  # pull_request: # Remove PR trigger for release-please, it should run on main after merge
-  #   branches: [ main ]
+  pull_request: # Reinstate PR trigger for the 'test' job
+    branches: [ main ]
   # workflow_dispatch will be handled by the release job's 'if' condition
   # tag push will be handled by the release job's 'if' condition
   workflow_dispatch: # Keep for now, might remove later
@@ -21,7 +21,8 @@ on:
 jobs:
   release-please:
     name: Create Release PR
-    # This job runs ONLY on pushes to the main branch due to the top-level 'on' trigger
+    # IMPORTANT: This job MUST only run on pushes to the main branch
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -37,9 +38,10 @@ jobs:
       - name: List files in workspace
         run: ls -la
       # Use the recommended action name
-      # Explicitly specify manifest file again, just in case auto-detect failed
+      # Explicitly specify both config and manifest files
       - uses: googleapis/release-please-action@v4
         with:
+          config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           token: ${{ secrets.GITHUB_TOKEN }} # Use default token for PR creation
 
