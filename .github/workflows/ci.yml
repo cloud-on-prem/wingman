@@ -1,16 +1,17 @@
 name: CI
 
 permissions:
-  contents: write
+  contents: write # Needed for release job
+  pull-requests: write # Needed for release-please job
 
 on:
   push:
     branches: [ main ]
-    tags:
-      - 'vscode-v*'
-  pull_request:
+  pull_request: # Reinstate PR trigger for the 'test' job
     branches: [ main ]
-  workflow_dispatch:
+  # workflow_dispatch will be handled by the release job's 'if' condition
+  # tag push will be handled by the release job's 'if' condition
+  workflow_dispatch: # Keep for now, might remove later
     inputs:
       version:
         description: 'Version to release (e.g., 0.1.0)'
@@ -18,12 +19,38 @@ on:
         type: string
 
 jobs:
+  release-please:
+    name: Create Release PR
+    # IMPORTANT: This job MUST only run on pushes to the main branch
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # Need to check out the code so the action can find the config files
+      # Fetch full history for release-please
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history for release-please
+      # Debug: List files to confirm config exists
+      - name: List files in workspace
+        run: ls -la
+      # Use the recommended action name
+      # Explicitly specify both config and manifest files
+      - uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          token: ${{ secrets.GITHUB_TOKEN }} # Use default token for PR creation
+
   test:
     name: Lint and Test
     runs-on: ubuntu-latest
-    # Only run on PRs, main branch pushes, or manual trigger
-    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    
+    # Run tests on pushes to main AND on pull requests targeting main
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.base_ref == 'main')
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -61,74 +88,75 @@ jobs:
     name: Build and Release Extension
     needs: test
     runs-on: ubuntu-latest
-    # Only run on tags or manual trigger
-    if: startsWith(github.ref, 'refs/tags/vscode-v') || github.event_name == 'workflow_dispatch'
+    # IMPORTANT: Only run when a release tag is pushed by release-please
+    if: startsWith(github.ref, 'refs/tags/vscode-v') 
     
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        # Ensure we checkout the code at the specific tag
+        with:
+          ref: ${{ github.ref }} 
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-      
-      - name: Determine Version
+          cache: 'npm' # Enable npm caching for faster installs
+
+      - name: Get Version from Tag
         id: version
         run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            VERSION="${{ github.event.inputs.version }}"
-          else
-            # Extract version from tag (remove 'vscode-v' prefix)
-            VERSION="${GITHUB_REF#refs/tags/vscode-v}"
-          fi
+          # Extract version from tag (remove 'vscode-v' prefix)
+          VERSION="${GITHUB_REF#refs/tags/vscode-v}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Using version: $VERSION"
       
-      - name: Install Dependencies
-        run: |
-          npm install --no-fund --no-audit
-          cd webview-ui
-          npm install --no-fund --no-audit
-      
-      - name: Install Xvfb
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb
-      
+      - name: Install Dependencies (Root)
+        run: npm ci --no-fund --no-audit # Use ci for faster, reliable installs
+
+      - name: Install Dependencies (Webview)
+        run: npm ci --no-fund --no-audit --prefix webview-ui # Use ci for webview
+
+      # Xvfb is not needed for packaging/publishing, only for tests run in the 'test' job
+
+      - name: Build Extension and Webview
+        run: npm run compile # Ensure this builds everything needed for packaging
+
       - name: Package Extension
         run: |
           mkdir -p dist
-          # Compile using production settings (if different, otherwise compile is fine)
-          # Assuming compile handles production build logic if needed based on env or flags
-          xvfb-run -a npm run compile 
-          # Package using vsce directly, dependencies are bundled by esbuild
-          npx @vscode/vsce package --no-yarn -o dist/goose-vscode-${{ steps.version.outputs.version }}.vsix
+          # Use the version extracted from the tag
+          PACKAGE_FILENAME="dist/goose-vscode-${{ steps.version.outputs.version }}.vsix"
+          npx @vscode/vsce package --no-yarn -o "$PACKAGE_FILENAME"
           
           # Verify the package was created
-          if [ ! -f "dist/goose-vscode-${{ steps.version.outputs.version }}.vsix" ]; then
-            echo "Failed to create the VSIX package"
+          if [ ! -f "$PACKAGE_FILENAME" ]; then
+            echo "Failed to create the VSIX package: $PACKAGE_FILENAME"
             exit 1
           fi
+          ls -l dist # List contents of dist for verification
       
-      - name: Create Release
-        id: create_release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/vscode-v')
+        # No need for 'if' here, job only runs on tag push
         with:
-          name: VS Code Extension v${{ steps.version.outputs.version }}
-          draft: false
-          prerelease: false
+          # Use the tag created by release-please
+          tag_name: ${{ github.ref_name }} 
+          # Let release-please generate notes in the PR, just upload assets here
+          generate_release_notes: false # Changelog is maintained separately
           files: dist/*.vsix
-          tag_name: ${{ github.ref_name }}
-          generate_release_notes: true
+          # name: VS Code Extension v${{ steps.version.outputs.version }} # Optional: Name is derived from tag
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish to VS Code Marketplace
-        id: publish_vscode_marketplace
-        if: startsWith(github.ref, 'refs/tags/vscode-v')
+        # Ensure VSCE_PAT secret is configured in GitHub secrets
+        if: success() && env.VSCE_PAT != null 
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
-          npx vsce publish --pat $VSCE_PAT
+          PACKAGE_FILENAME="dist/goose-vscode-${{ steps.version.outputs.version }}.vsix"
+          echo "Publishing $PACKAGE_FILENAME to VS Code Marketplace..."
+          # Use the packaged vsix file directly
+          npx @vscode/vsce publish --packagePath "$PACKAGE_FILENAME" --pat $VSCE_PAT

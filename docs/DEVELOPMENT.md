@@ -59,95 +59,88 @@ For testing the webview UI components directly:
 3. Run type-checking: `npm run type-check`
 4. Return to root: `cd ..`
 
-## Packaging and Releasing
+## Commit Message Guidelines
 
-### Packaging the Extension (Manual)
+This project adheres to the **Conventional Commits** specification ([v1.0.0](https://www.conventionalcommits.org/en/v1.0.0/)). All commit messages **must** follow this format to enable automated changelog generation and version bumping by `release-please`.
 
-While the official release packaging is handled by the GitHub workflow, you can manually package the extension for local testing or distribution using commands run from the project root.
+**Format:**
 
-The available npm scripts use `vsce` (VS Code Extension Manager) and rely on the standard build (`npm run compile`):
+```
+<type>[optional scope]: <description>
 
-- `npm run package`: Runs linting and all tests, then compiles and packages the extension into a `.vsix` file in the project root.
-- `npm run package:dist`: Runs linting and all tests, then compiles and packages the extension into the `dist/` directory, naming the file `goose-vscode-[version].vsix`.
-- `npm run package:skip-tests`: Skips linting and tests, compiles, and packages the extension into a `.vsix` file in the project root.
+[optional body]
 
-Example for creating a distributable package in the `dist` folder:
+[optional footer(s)]
+```
+
+**Common Types:**
+
+*   `feat`: A new feature for the user (corresponds to `minor` in SemVer).
+*   `fix`: A bug fix for the user (corresponds to `patch` in SemVer).
+*   `perf`: A code change that improves performance (corresponds to `patch` in SemVer).
+*   `refactor`: A code change that neither fixes a bug nor adds a feature.
+*   `style`: Changes that do not affect the meaning of the code (white-space, formatting, missing semi-colons, etc).
+*   `test`: Adding missing tests or correcting existing tests.
+*   `build`: Changes that affect the build system or external dependencies (e.g., `npm`, `esbuild`, `vsce`).
+*   `ci`: Changes to our CI configuration files and scripts (e.g., GitHub Actions).
+*   `docs`: Documentation only changes.
+*   `chore`: Other changes that don't modify `src` or `test` files (e.g., updating dependencies).
+
+**Breaking Changes:** Indicate breaking changes by appending `!` after the type/scope (`feat!: ...`) or by adding `BREAKING CHANGE:` in the commit footer (corresponds to `major` in SemVer).
+
+**Examples:**
+
+*   `feat(webview): add support for multiple chat sessions`
+*   `fix(server): prevent crash when goosed path is invalid`
+*   `docs: update architecture diagram for session management`
+*   `refactor(apiClient): simplify error handling logic`
+*   `chore(deps): update typescript to 5.8.2`
+*   `ci: add automated changelog generation step`
+*   `feat(api)!: change chat endpoint structure`
+
+## Release Process (Automated)
+
+This project uses **`release-please`** to automate the release process based on **Conventional Commits**.
+
+**Workflow:**
+
+1.  **Development:** Developers push features/fixes to branches and create Pull Requests (PRs) targeting the `main` branch.
+2.  **Conventional Commits:** All commits merged into `main` **must** follow the [Conventional Commits](#commit-message-guidelines) format.
+3.  **Release PR Creation:** Upon merging commits to `main`, the `Release Please` GitHub Action (`.github/workflows/ci.yml`) runs automatically.
+    *   It analyzes commits since the last release tag (`vscode-v*`).
+    *   It determines the correct semantic version bump (major, minor, or patch).
+    *   It creates or updates a special "Release PR". This PR contains:
+        *   Version bumps in `package.json`, `.release-please-manifest.json`, and `webview-ui/package.json`.
+        *   An updated `CHANGELOG.md` with entries generated from the conventional commit messages.
+4.  **Review Release PR:** Review the automatically generated Release PR:
+    *   Verify the version bump is correct.
+    *   Check that the `CHANGELOG.md` entries accurately reflect the changes.
+5.  **Merge Release PR:** Merge the Release PR into `main`.
+6.  **Tagging and Publishing:** Merging the Release PR automatically triggers the following:
+    *   `release-please` creates a Git tag (e.g., `vscode-v0.2.0`) on the merge commit.
+    *   The tag push triggers the `release` job in the GitHub Actions workflow (`.github/workflows/ci.yml`).
+    *   The `release` job:
+        *   Checks out the code at the new tag.
+        *   Installs dependencies using `npm ci`.
+        *   Builds the extension (`npm run compile`).
+        *   Packages the extension into a `.vsix` file (`dist/goose-vscode-vX.Y.Z.vsix`).
+        *   Creates a GitHub Release associated with the tag, uploading the `.vsix` file as an asset.
+        *   Publishes the `.vsix` file to the VS Code Marketplace (if `VSCE_PAT` secret is configured).
+
+**Manual Packaging (for testing):**
+
+While the official release is automated, you can still build a local `.vsix` package for testing purposes using the scripts defined in `package.json`:
+
+-   `npm run package:dist`: Builds and packages into the `dist/` folder.
+-   `npm run package`: Builds and packages into the root folder.
+-   `npm run package:skip-tests`: Skips tests, builds, and packages into the root folder.
 
 ```bash
+# Example: Create a package in dist/ for local testing
 npm run package:dist
 ```
 
-This will create a `.vsix` file in the `dist/` directory with the name `goose-vscode-[version].vsix`.
-
-### Using the Release Script
-
-A helper script is provided to automate the version bumping, committing, and tagging process:
-
-```bash
-./scripts/release.sh <new_version>
-# Example: ./scripts/release.sh 0.1.0
-```
-
-This script performs the following actions:
-1. Updates the `version` in `package.json`.
-2. Runs `npm install` to update `package-lock.json`.
-3. Stages `package.json` and `package-lock.json`.
-4. Commits the changes with the message "Bump vscode extension to v<new_version>".
-5. Creates a Git tag named `vscode-v<new_version>`.
-6. Prints a confirmation message and reminds you to push the commit and tag (`git push && git push --tags`).
-
-**Note:** This script no longer handles packaging. Packaging is now done automatically by the GitHub release workflow.
-
-### GitHub Release Workflow
-
-The repository includes a GitHub Actions workflow that automatically builds and releases the extension when a tag with the format `vscode-v*` is pushed to the repository.
-
-The workflow:
-1. Checks out the code
-2. Sets up Node.js
-3. Installs dependencies
-4. Builds and packages the extension
-5. Creates a GitHub release with the packaged extension attached
-
-#### Releasing with Protected Branches
-
-Since direct commits to the main branch are restricted, follow this process for releases:
-
-1. Create a feature branch for the version update:
-   ```bash
-   git checkout -b release/vscode-v0.1.0
-   ```
-
-2. Update the version in `package.json` and make any other necessary changes
-   ```bash
-   ./scripts/release.sh 0.1.0  # Updates version, runs npm install, commits, and tags
-   ```
-
-3. Push the commit and the new tag:
-   ```bash
-   git push origin release/vscode-v0.1.0
-   # Do NOT push the tag from the feature branch
-   ```
-
-4. Create a pull request and get it reviewed/approved
-
-5. After the PR is merged to main, checkout the main branch and pull the latest changes:
-   ```bash
-   git checkout main
-   git pull
-   ```
-
-6. Push the tag **from the main branch**:
-   ```bash
-   # Ensure you are on the main branch and it's up-to-date first!
-   # git checkout main
-   # git pull
-   git push origin vscode-v0.1.0 # Push the specific tag created by the script
-   ```
-
-Pushing the tag (e.g., `vscode-v0.1.0`) from the `main` branch triggers the GitHub workflow to build, package, and create a release.
-
-The workflow can also be triggered manually from the GitHub Actions tab, where you can specify the version to release.
+**Note:** The `scripts/release.sh` script is **deprecated** for the main release flow but might be kept for local utility if needed (see Phase 3 tasks).
 
 ## Known Issues
 
