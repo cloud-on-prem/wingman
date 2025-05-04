@@ -1,16 +1,19 @@
 {
   "packages": {
-    ".": {
+    "vscode-extension": {
+      "component": "vscode-extension",
       "release-type": "node",
+      "package-name": "wingman-goose",
       "changelog-path": "CHANGELOG.md",
-              "bump-minor-pre-major": true,
-              "bump-patch-for-minor-pre-major": true,
-              "tag-separator": "vscode-v",
-              "include-component-in-tag": false,
-              "extra-files": [
-                "webview-ui/package.json"
-              ]
-            }
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true,
+      "tag-separator": "vscode-v",
+      "include-component-in-tag": false,
+      "extra-files": [
+        "package.json",
+        "webview-ui/package.json"
+      ]
+    }
   },
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json"
 }
