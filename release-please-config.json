@@ -7,6 +7,7 @@
               "bump-minor-pre-major": true,
               "bump-patch-for-minor-pre-major": true,
               "tag-separator": "vscode-v",
+              "include-component-in-tag": false,
               "extra-files": [
                 "webview-ui/package.json"
               ]

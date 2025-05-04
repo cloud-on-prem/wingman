@@ -127,6 +127,27 @@ This project uses **`release-please`** to automate the release process based on 
         *   Creates a GitHub Release associated with the tag, uploading the `.vsix` file as an asset.
         *   Publishes the `.vsix` file to the VS Code Marketplace (if `VSCE_PAT` secret is configured).
 
+**Commit Type Impact:**
+
+The type of Conventional Commit used when merging changes into `main` determines the version bump and whether the change appears in the `CHANGELOG.md`.
+
+| Commit Type Prefix | SemVer Bump Triggered | Appears in CHANGELOG.md? | Example                                      |
+| :----------------- | :-------------------- | :----------------------- | :------------------------------------------- |
+| `feat`             | Minor (0.x.0 -> 0.y.0) | Yes (under Features)     | `feat: add dark mode toggle`                 |
+| `fix`              | Patch (0.0.x -> 0.0.y) | Yes (under Bug Fixes)    | `fix: correct typo in error message`         |
+| `perf`             | Patch (0.0.x -> 0.0.y) | Yes (under Performance)  | `perf: optimize rendering loop`              |
+| `feat!` / `fix!`   | Major (x.y.z -> Y.0.0) | Yes (under BREAKING CHANGES) | `feat!: change API endpoint structure`       |
+| `refactor`         | None                  | No                       | `refactor: simplify internal logic`          |
+| `style`            | None                  | No                       | `style: format code with prettier`           |
+| `test`             | None                  | No                       | `test: add unit tests for parser`            |
+| `build`            | None                  | No                       | `build: update esbuild configuration`        |
+| `ci`               | None                  | No                       | `ci: fix workflow trigger condition`         |
+| `docs`             | None                  | No                       | `docs: update README installation steps`     |
+| `chore`            | None                  | No                       | `chore: update non-essential dependencies`   |
+
+*   **Changelog:** Only `feat`, `fix`, `perf`, and breaking changes (`!`) are included in the automatically generated `CHANGELOG.md` within the Release PR.
+*   **Publishing:** A new version is published to the VS Code Marketplace *only* when a Release PR is merged, which triggers the tag creation and the `release` workflow job. Commits like `docs`, `chore`, `refactor`, etc., merged to `main` will *not* trigger a release or appear in the changelog, although they will be included in the *next* release if a `feat` or `fix` commit triggers one later.
+
 **Manual Packaging (for testing):**
 
 While the official release is automated, you can still build a local `.vsix` package for testing purposes using the scripts defined in `package.json`:
