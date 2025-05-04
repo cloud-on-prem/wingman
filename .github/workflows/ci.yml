@@ -49,8 +49,7 @@ jobs:
   test:
     name: Lint and Test
     runs-on: ubuntu-latest
-    # Run tests on pushes to main AND on pull requests targeting main
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.base_ref == 'main')
+    # No 'if' needed here; job runs if the workflow is triggered by push to main or PR targeting main
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
