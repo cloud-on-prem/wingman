@@ -1,9 +1,10 @@
 import { EventEmitter } from 'events';
 import { TextDecoder } from 'util';
 import { ServerManager } from '../serverManager';
-import { Message, createUserMessage } from '../../types';
+import { Message, createUserMessage, Content } from '../../types';
 import * as vscode from 'vscode';
 import { SessionManager, SessionEvents } from './sessionManager';
+import { logger } from '../../utils/logger';
 
 /**
  * Events emitted by the chat processor
@@ -55,6 +56,19 @@ export class ChatProcessor {
         messageId?: string, 
         sessionId?: string
     ): Promise<void> {
+        // Task 2.1: Validate User Input & Task 2.2: Log Empty Message Attempts
+        if (!text || text.trim() === '') {
+            // Check if there's also no code context. If pure empty, it's more notable.
+            if ((!codeReferences || codeReferences.length === 0) && !prependedCode) {
+                logger.info('ChatProcessor: sendMessage called with empty user text and no code context. Not proceeding.');
+            } else {
+                logger.info('ChatProcessor: sendMessage called with empty user text (but with code context). Not proceeding as per task 2.1 focusing on user text.');
+            }
+            // Not proceeding further if user's own typed text is empty.
+            // This fulfills the requirement: "If IT [user text] is empty after trimming, do not proceed"
+            return;
+        }
+
         // Detailed logging at the start of the method
         console.log("--- ChatProcessor.sendMessage Start ---");
         console.log("Received text:", text);
@@ -83,52 +97,95 @@ export class ChatProcessor {
         // or with code references if provided
         let formattedText = text || '';
         
-        // FIX: Completely reworked this section to handle prependedCode correctly
+        let prependedCodeProcessedAndValid = false; // Flag to track if valid prepended code was processed
+
         if (prependedCode) {
-            console.log("DEBUG: prependedCode type:", typeof prependedCode);
-            console.log("DEBUG: prependedCode keys:", prependedCode ? Object.keys(prependedCode) : 'null');
-            
-            // Extract content, fileName, and languageId safely
-            const content = prependedCode.content || '';
-            const languageId = prependedCode.languageId || '';
-            const fileName = prependedCode.fileName || '';
-            
-            console.log(`DEBUG: Adding code block for ${fileName} (${languageId})`);
-            console.log(`DEBUG: Code content length: ${content.length}`);
-            
-            // Always format with the code block, even if some properties are missing
-            const codeBlock = `\`\`\`${languageId}\n${content}\n\`\`\`\n\n`;
-            
-            // Prepend the code block to the message text
-            formattedText = codeBlock + formattedText;
-            
-            // Important: Clear codeReferences to ensure we don't send the code twice
-            codeReferences = []; 
-            
-            console.log("Formatted message with prepended code block");
-            console.log("DEBUG: Final formatted text:", formattedText);
-        } else if (codeReferences && codeReferences.length > 0) {
-            // Original behavior for code references (≥100 lines)
-            for (const reference of codeReferences) {
-                if (formattedText.length > 0) {
-                    formattedText += '\n\n';
+            // Task 3.2: Validate prependedCode.content
+            if (prependedCode.content && typeof prependedCode.content === 'string') {
+                const originalContent = prependedCode.content;
+                const trimmedContent = originalContent.trim();
+
+                if (trimmedContent === '') {
+                    logger.info('ChatProcessor: prependedCode.content is empty or whitespace after trimming. Not including it.');
+                    // prependedCodeProcessedAndValid remains false, so codeReferences might be processed later
+                } else {
+                    // Content is valid, proceed to use it
+                    const languageId = prependedCode.languageId || '';
+                    const fileName = prependedCode.fileName || 'snippet'; // Default filename if not provided
+                    
+                    console.log(`DEBUG: Adding prepended code block for ${fileName} (${languageId})`);
+                    console.log(`DEBUG: Prepended code content length (trimmed): ${trimmedContent.length}`);
+                    
+                    // Use template literals correctly for the code block
+                    const codeBlock = "```" + languageId + "\n" + trimmedContent + "\n```\n\n";
+                    
+                    formattedText = codeBlock + formattedText;
+                    codeReferences = []; // Clear other references as prepended code takes precedence
+                    prependedCodeProcessedAndValid = true;
+                    
+                    console.log("Formatted message with prepended code block");
+                    console.log("DEBUG: Final formatted text with prepended code:", formattedText);
                 }
-                formattedText += `From ${reference.filePath}:${reference.startLine}-${reference.endLine}`;
+            } else {
+                logger.warn('ChatProcessor: prependedCode object present but its content is missing or not a string. Ignoring prependedCode.');
+                // prependedCodeProcessedAndValid remains false, so codeReferences might be processed later
             }
-            console.log("Formatted message with code references for ≥100 line selection");
         }
 
-        console.log("Formatted message text:", formattedText);
+        // Task 3.3: Validate codeReference.selectedText and prepare content blocks
+        const validReferenceSummaryLines: string[] = [];
+        const additionalContentBlocks: Content[] = [];
 
-        // Create a user message
+        // Process codeReferences only if prependedCode was not processed or was invalid
+        if (!prependedCodeProcessedAndValid && codeReferences && codeReferences.length > 0) {
+            for (const reference of codeReferences) {
+                // Assuming reference structure from CodeReferenceManager: { filePath, startLine, endLine, selectedText, languageId, fileName }
+                if (reference && reference.selectedText && typeof reference.selectedText === 'string') {
+                    const trimmedSelectedText = reference.selectedText.trim();
+                    if (trimmedSelectedText === '') {
+                        logger.info(`ChatProcessor: codeReference from ${reference.filePath || 'unknown file'} selectedText is empty. Excluding this reference.`);
+                    } else {
+                        // Valid selectedText: include its metadata string and content block
+                        validReferenceSummaryLines.push(`From ${reference.filePath}:${reference.startLine}-${reference.endLine}`);
+                        
+                        const codeBlock = "```" + (reference.languageId || '') + "\n" + trimmedSelectedText + "\n```";
+                        additionalContentBlocks.push({ type: 'text', text: codeBlock });
+                        logger.info(`ChatProcessor: Adding content from codeReference ${reference.filePath}.`);
+                    }
+                } else {
+                    logger.warn(`ChatProcessor: codeReference from ${reference.filePath || 'unknown file'} has missing, null, or invalid selectedText. Excluding this reference.`);
+                }
+            }
+
+            if (validReferenceSummaryLines.length > 0) {
+                if (formattedText.length > 0) {
+                    formattedText += '\n\n'; // Add separation if user text exists
+                }
+                formattedText += validReferenceSummaryLines.join('\n'); // Append all valid summaries
+                console.log("Formatted message with valid code references summary.");
+            }
+        }
+
+        console.log("Final formatted message text (with reference summaries):", formattedText);
+        additionalContentBlocks.forEach((block, index) => {
+            if (block.type === 'text') {
+                console.log(`Additional content block ${index + 1}:`, block.text.substring(0, 100) + '...'); // Log snippet of code blocks
+            } else if (block.type === 'image') {
+                console.log(`Additional content block ${index + 1}: Image block (mimeType: ${block.mimeType}, data length: ${block.data.length})`);
+            } else {
+                console.log(`Additional content block ${index + 1}: Unknown block type`, block);
+            }
+        });
+
+        // Create a user message. `formattedText` is guaranteed to be non-empty if we passed the initial check.
+        const userMessageContent: Content[] = [{ type: 'text', text: formattedText }];
+        userMessageContent.push(...additionalContentBlocks); // Add actual code blocks from valid references
+
         const userMessage: Message = {
             id: messageId || `user_${Date.now()}`,
             role: 'user',
             created: Date.now(),
-            content: [{
-                type: 'text',
-                text: formattedText
-            }]
+            content: userMessageContent
         };
 
         // Add to current messages

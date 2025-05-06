@@ -83,6 +83,7 @@ export class ServerManager {
     private gooseProvider: string | null = null;
     private gooseModel: string | null = null;
     private configLoadAttempted: boolean = false;
+    private serverFullyStarted: boolean = false;
 
     constructor(
         context: vscode.ExtensionContext,
@@ -91,6 +92,7 @@ export class ServerManager {
         this.context = context;
         this.eventEmitter = new EventEmitter();
         this.extensionEvents = new EventEmitter();
+        this.serverFullyStarted = false;
 
         // Use injected or default dependencies
         this.startGoosedFn = dependencies.startGoosed || actualStartGoosed;
@@ -129,10 +131,14 @@ export class ServerManager {
      * Start the Goose server
      */
     public async start(): Promise<boolean> {
+        this.logger.info('[ServerManager.start] Method entered.'); // New log
         if (this.status !== ServerStatus.STOPPED) {
-            this.logger.info('Server is already running or starting');
-            return false;
+            this.logger.info(`Server start called but status is ${this.status}.`);
+            // Return true if already running, false otherwise (e.g. starting, error)
+            return this.status === ServerStatus.RUNNING;
         }
+
+        this.serverFullyStarted = false;
 
         // --- Load Configuration ---
         if (!this.configLoadAttempted) { // Attempt loading only once per instance lifecycle or restart
@@ -185,9 +191,27 @@ export class ServerManager {
             this.serverInfo = await this.startGoosedFn(serverConfig);
 
             // Set up process exit handler
-            this.serverInfo.process.on('close', (code) => {
-                this.logger.info(`Server process exited with code ${code}`);
-                this.setStatus(ServerStatus.STOPPED);
+            this.serverInfo.process.on('close', (code) => { // code can be number or null
+                this.logger.info(`Server process exited with code ${code === null ? 'null (signal)' : code}`);
+                const wasRunningAndFullyStarted = this.serverFullyStarted;
+                
+                this.serverInfo = null; // Clean up server info
+                this.apiClient = null;  // Clean up API client
+                this.serverFullyStarted = false; // Reset flag
+                this.configLoadAttempted = false; // Allow re-loading config on next start or restart
+
+                if (code !== null && code !== 0) { // Exited with a specific error code
+                    this.logger.error(`Server process exited with specific error code: ${code}. Setting status to ERROR.`);
+                    this.setStatus(ServerStatus.ERROR);
+                } else if (code === null || !wasRunningAndFullyStarted) { 
+                    // Exited due to a signal (code is null) OR exited with 0 but before full startup
+                    const reason = code === null ? "due to a signal" : "cleanly (code 0) but before full startup";
+                    this.logger.warn(`Server process exited ${reason}. Setting status to ERROR.`);
+                    this.setStatus(ServerStatus.ERROR);
+                } else { // code === 0 AND wasRunningAndFullyStarted
+                    this.logger.info('Server process exited cleanly after being fully started. Setting status to STOPPED.');
+                    this.setStatus(ServerStatus.STOPPED);
+                }
                 this.eventEmitter.emit(ServerEvents.SERVER_EXIT, code);
             });
 
@@ -205,9 +229,11 @@ export class ServerManager {
 
             this.setStatus(ServerStatus.RUNNING);
             this.logger.info('Goose server is running and agent configured.');
+            this.serverFullyStarted = true; // Server started successfully
             return true; // Return true on successful start and configuration
         } catch (error: any) {
             this.logger.error('Error starting Goose server:', error);
+            this.serverFullyStarted = false; // Ensure flag is false on error
 
             // Check for specific binary not found error
             const errorMessage = error instanceof Error ? error.message : String(error);
@@ -280,6 +306,7 @@ export class ServerManager {
     public stop(): void {
         if (this.serverInfo?.process) {
             this.logger.info('Stopping Goose server');
+            this.serverFullyStarted = false; // Mark as not fully started during stop sequence
 
             try {
                 if (process.platform === 'win32' && this.serverInfo.process.pid) {
@@ -294,7 +321,8 @@ export class ServerManager {
 
             this.serverInfo = null;
             this.apiClient = null;
-            this.configLoadAttempted = false; // Allow re-loading config on next start
+            this.configLoadAttempted = false; // Allow re-loading config on next start/restart
+            this.serverFullyStarted = false; // Ensure it's false after stopping
             this.setStatus(ServerStatus.STOPPED);
         }
     }

@@ -30,7 +30,7 @@ interface ChatInputProps {
 
 export const ChatInput: React.FC<ChatInputProps> = ({
     inputMessage,
-    codeReferences, // Receives the combined list
+    codeReferences, // Note: codeReferences are not directly used for button disabled state anymore
     isLoading,
     // Remove unused props
     // prependedCode, 
@@ -47,10 +47,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     // Track focus state of the webview
     const [isWebviewFocused, setIsWebviewFocused] = useState(true);
 
+    const isInputTextEmpty = inputMessage.trim() === '';
+
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
-            onSendMessage();
+            if (!isLoading && !isInputTextEmpty) { // Send if not loading and text is not empty
+                onSendMessage();
+            }
         }
     };
 
@@ -90,7 +94,18 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         }
     }, [isLoading, wasLoading, isWebviewFocused]);
 
-    const isDisabled = (!inputMessage.trim() && codeReferences.length === 0) && !isLoading;
+    // If loading, button is for stopping and should NOT be disabled by text check.
+    // Otherwise, it's a send button, disabled if input text is empty.
+    const sendButtonDisabled = isLoading ? false : isInputTextEmpty;
+
+    let buttonTitle: string;
+    if (isLoading) {
+        buttonTitle = 'Stop generation';
+    } else if (isInputTextEmpty) {
+        buttonTitle = 'Type a message to send'; // Updated title for empty text input
+    } else {
+        buttonTitle = 'Send message (Enter)';
+    }
 
     return (
         <div className="input-container">
@@ -118,8 +133,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                 <button
                     className="icon-button" 
                     onClick={isLoading ? onStopGeneration : onSendMessage}
-                    disabled={isDisabled}
-                    title={isLoading ? 'Stop generation' : 'Send message (Enter)'} 
+                    disabled={sendButtonDisabled}
+                    title={buttonTitle} 
                 >
                     {/* Use Lucide SVG icons */}
                     {isLoading ? <StopCircle size={16} /> : <SendHorizonal size={16} />}

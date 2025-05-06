@@ -74,11 +74,12 @@ const App: React.FC = () => {
 
     // Handler for sending a chat message
     const handleSendMessage = useCallback(() => {
-        if (!inputMessage.trim() && codeReferences.length === 0) {
+        const trimmedMessage = inputMessage.trim();
+        if (!trimmedMessage && codeReferences.length === 0) {
             return;
         }
 
-        sendChatMessage(inputMessage, codeReferences, currentSessionId);
+        sendChatMessage(trimmedMessage, codeReferences, currentSessionId);
         setInputMessage('');
     }, [inputMessage, codeReferences, currentSessionId, sendChatMessage]);
 

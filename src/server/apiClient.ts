@@ -323,9 +323,17 @@ export class ApiClient {
     public async setAgentPrompt(prompt: string): Promise<any> {
         this.logger.info(`Setting agent system prompt...`); 
         const path = '/agent/prompt';
+        const trimmedPrompt = prompt.trim(); // Task 4.2: Trim the prompt
+
+        // Task 4.3: Prevent empty system prompt configuration
+        if (trimmedPrompt === '') {
+            this.logger.info('Trimmed system prompt is empty. Skipping API call to /agent/prompt.');
+            return Promise.resolve(undefined);
+        }
+
         const options: RequestInit = {
             method: 'POST',
-            body: JSON.stringify({ extension: prompt })
+            body: JSON.stringify({ extension: trimmedPrompt }) // Use trimmedPrompt
         };
         try {
             const response = await this.request(path, options);

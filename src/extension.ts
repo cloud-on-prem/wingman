@@ -1,9 +1,9 @@
 // The module 'vscode' contains the VS Code extensibility API
- // Import the module and reference it with the alias vscode in your code below
- import * as vscode from 'vscode';
- import { ColorThemeKind } from 'vscode'; // Import ColorThemeKind
- import * as path from 'path';
- import * as fs from 'fs';
+// Import the module and reference it with the alias vscode in your code below
+import * as vscode from 'vscode';
+import { ColorThemeKind } from 'vscode'; // Import ColorThemeKind
+import * as path from 'path';
+import * as fs from 'fs';
 import { ServerManager, ServerStatus, ServerEvents } from './server/serverManager';
 import { ChatProcessor, ChatEvents } from './server/chat/chatProcessor';
 import { Message, getTextContent } from './types';
@@ -34,7 +34,7 @@ interface WebviewMessage {
 /**
  * Manages webview panels and sidebar view
  */
-class GooseViewProvider implements vscode.WebviewViewProvider {
+export class GooseViewProvider implements vscode.WebviewViewProvider {
 	public static readonly viewType = 'goose.chatView';
 	private _view?: vscode.WebviewView;
 	private isWebviewReady = false; // Added for readiness check
@@ -668,206 +668,182 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 	}
 }
 
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
+// --- Exportable Handler Logic --- 
+// Added export
+export async function handleAskAboutSelectionCommand(
+	provider: GooseViewProvider,
+	codeReferenceManager: CodeReferenceManager
+) {
+	logger.info('Executing command: goose.askAboutSelection');
+
+	const editor = vscode.window.activeTextEditor;
+	if (!editor) {
+		logger.warn('No active text editor found.');
+		vscode.window.showInformationMessage('No active text editor.');
+		return;
+	}
+
+	const document = editor.document;
+	const selection = editor.selection;
+
+	let codeReferenceToSend: CodeReference | null = null;
+	let prepayloadToSend: any | null = null; // Payload for PREPARE_MESSAGE_WITH_CODE
+	let actionTaken = false; // Flag to track if we should focus
+
+	if (selection.isEmpty) {
+		// Task 1.2: No selection - use whole file
+		const fileContent = document.getText();
+		if (!fileContent || fileContent.trim() === '') { // Updated check
+			vscode.window.showInformationMessage('Active file is empty or contains only whitespace.');
+			return;
+		}
+		const fileName = path.basename(document.fileName);
+		const lineCount = document.lineCount;
+
+		if (lineCount >= SELECTION_LINE_LIMIT_FOR_PREPEND) {
+			// Use the new method for whole file referencing
+			codeReferenceToSend = codeReferenceManager.getCodeReferenceForEntireFile(document);
+			// getCodeReferenceForEntireFile already checks for empty/whitespace content
+			// and returns null, so no need for an additional check here if it's null.
+			// However, if it *is* null, we might want to inform the user, though it's covered by the initial check.
+			if (codeReferenceToSend) {
+				logger.info(`File >= ${SELECTION_LINE_LIMIT_FOR_PREPEND} lines, creating code reference chip for whole file.`);
+				actionTaken = true;
+			} else {
+				// This case should theoretically be caught by the initial fileContent.trim() check.
+				// If it still happens, it's an unexpected state or a bug in getCodeReferenceForEntireFile.
+				logger.warn('getCodeReferenceForEntireFile returned null for a non-empty, non-whitespace file.');
+				vscode.window.showInformationMessage('Could not create a reference for the file.');
+				return;
+			}
+		} else {
+			// Prepending whole file (already checked for empty/whitespace)
+			prepayloadToSend = {
+				content: fileContent,
+				fileName: fileName,
+				languageId: document.languageId,
+				startLine: 1,
+				endLine: lineCount > 0 ? lineCount : 1
+			};
+			logger.info(`File < ${SELECTION_LINE_LIMIT_FOR_PREPEND} lines, preparing message with whole file code.`);
+			actionTaken = true;
+		}
+	} else {
+		// User has made a selection
+		const selectedLines = selection.end.line - selection.start.line + 1;
+
+		if (selectedLines >= SELECTION_LINE_LIMIT_FOR_PREPEND) {
+			// Task 1.3: >= 100 lines - use manager to create code reference chip
+			codeReferenceToSend = codeReferenceManager.getCodeReferenceFromSelection();
+			if (!codeReferenceToSend) {
+				// This means selection was empty or whitespace only
+				vscode.window.showInformationMessage('Selected text is empty or contains only whitespace.');
+				return;
+			}
+			logger.info(`Selection >= ${SELECTION_LINE_LIMIT_FOR_PREPEND} lines, creating code reference chip.`);
+			actionTaken = true;
+		} else {
+			// Task 1.4: < 100 lines - prepare message with code
+			const selectedText = document.getText(selection);
+			if (selectedText.trim() === '') { // Added check
+				vscode.window.showInformationMessage('Selected text is empty or contains only whitespace.');
+				return;
+			}
+			prepayloadToSend = {
+				content: selectedText,
+				fileName: path.basename(document.fileName),
+				languageId: document.languageId,
+				// Add line numbers to the payload
+				startLine: selection.start.line + 1, // VS Code lines are 0-based, display is 1-based
+				endLine: selection.end.line + 1
+			};
+			logger.info(`Selection < ${SELECTION_LINE_LIMIT_FOR_PREPEND} lines (${prepayloadToSend.startLine}-${prepayloadToSend.endLine}), preparing message with code.`);
+			actionTaken = true;
+		}
+	}
+
+	// Send the appropriate message to the webview
+	if (codeReferenceToSend) {
+		provider.postMessage({ // Use the passed provider
+			command: MessageType.ADD_CODE_REFERENCE,
+			codeReference: codeReferenceToSend
+		});
+	} else if (prepayloadToSend) {
+		provider.postMessage({ // Use the passed provider
+			command: MessageType.PREPARE_MESSAGE_WITH_CODE,
+			payload: prepayloadToSend
+		});
+	}
+
+	// Focus the chat view and input only if an action was taken
+	if (actionTaken) {
+		vscode.commands.executeCommand('goose.chatView.focus');
+		provider.postMessage({ // Use the passed provider
+			command: MessageType.FOCUS_CHAT_INPUT
+		});
+	}
+}
+// --- End Exportable Handler Logic ---
+
 export function activate(context: vscode.ExtensionContext) {
-    // Initial log message using the new logger
-    logger.info('Activating Goose extension...');
 
-	// Initialize logger with configuration
-	// DefaultLogger.initializeFromConfig(context);
-	// logger.info('Goose extension activated with log level: ' + LogLevel[DefaultLogger.getGlobalLevel()]);
+	// Initialize logger first
+	logger.info('Goose extension activating...');
 
-	// Create server manager with dependencies (using defaults)
-	const serverManager = new ServerManager(context, {
-		// All dependencies use defaults, but we show the explicit structure
-		// which allows for easier mocking in tests or future customization
-	});
+	// Get config path
+	const configFilePath = getConfigFilePath();
+	logger.info(`Using config file at: ${configFilePath}`);
 
-	// Create chat processor
+	// Create the ServerManager instance
+	const serverManager = new ServerManager(context);
+
+	// Now create instances that depend on serverManager (assuming dependencies)
+	const sessionManager = new SessionManager(serverManager);
 	const chatProcessor = new ChatProcessor(serverManager);
 
-	// Create session manager
-	const sessionManager = new SessionManager(serverManager);
-
-	// Connect chat processor to session manager
-	chatProcessor.setSessionManager(sessionManager);
-
-	// Create workspace context provider
-	const workspaceContextProvider = WorkspaceContextProvider.getInstance();
-
-	// Create the provider before starting the server
-	const provider = new GooseViewProvider(context.extensionUri, serverManager, chatProcessor, sessionManager);
-
-	// Register the Goose View Provider
-	const viewRegistration = vscode.window.registerWebviewViewProvider(
-		GooseViewProvider.viewType,
-		provider,
-		{
-			webviewOptions: { retainContextWhenHidden: true }
-		}
+	// Create the provider instance, passing managers
+	const provider = new GooseViewProvider(
+		context.extensionUri,
+		serverManager, // Pass serverManager
+		chatProcessor, // Pass chatProcessor
+		sessionManager // Pass sessionManager
 	);
 
-	// Listen for server exit events
-	serverManager.on('serverExit', (code: number | null) => {
-		logger.warn(`Extension received server exit with code: ${code ?? 'unknown'}`);
-		if (provider) {
-			// Use the new postMessage method
-			provider.postMessage({
-				command: MessageType.SERVER_EXIT,
-				code: code
-			});
-		}
-	});
+	// Get the code reference manager instance
+	const codeReferenceManager = CodeReferenceManager.getInstance();
 
-	// Automatically start the server when the extension activates
-	serverManager.start().then(success => {
-		if (success) {
-			logger.info('Goose server started automatically on extension activation');
-		} else {
-			logger.error('Failed to automatically start the Goose server');
-		}
-	}).catch(error => {
-		logger.error('Error starting Goose server:', error);
-	});
+	// Register the view provider
+	const viewRegistration = vscode.window.registerWebviewViewProvider(GooseViewProvider.viewType, provider);
 
-	// Register code action provider
-	const codeActionProvider = new GooseCodeActionProvider();
-	const supportedLanguages = [
-		'javascript', 'typescript', 'python', 'java', 'csharp',
-		'cpp', 'c', 'rust', 'go', 'php', 'ruby', 'swift', 'kotlin',
-		'html', 'css', 'markdown', 'json', 'yaml', 'plaintext'
-	];
-
-	const codeActionRegistration = vscode.languages.registerCodeActionsProvider(
-		supportedLanguages.map(lang => ({ language: lang })),
-		codeActionProvider
-	);
-
-	// The command has been defined in the package.json file
+	// Register "Hello World" command
 	const helloDisposable = vscode.commands.registerCommand('goose.helloWorld', () => {
-		// The code you place here will be executed every time your command is executed
-		// Display a message box to the user
 		vscode.window.showInformationMessage('Hello World from Goose!');
 	});
 
-	// Command to focus the Goose view
-	const startDisposable = vscode.commands.registerCommand('goose.start', () => {
-		vscode.commands.executeCommand('goose.chatView.focus');
+	// Register Start/Stop commands for the server
+	const startServerDisposable = vscode.commands.registerCommand('goose.startServer', () => {
+		serverManager.start();
 	});
-
-	// Command to manually start the server
-	const startServerDisposable = vscode.commands.registerCommand('goose.startServer', async () => {
-		try {
-			logger.info('Attempting to manually start Goose server...');
-			await serverManager.start();
-			vscode.window.showInformationMessage('Goose server started successfully');
-		} catch (error) {
-			logger.error('Failed to manually start the Goose server:', error);
-			vscode.window.showErrorMessage(`Failed to start Goose server: ${error}`);
-		}
-	});
-
-	// Command to manually stop the server
 	const stopServerDisposable = vscode.commands.registerCommand('goose.stopServer', () => {
-		try {
-			serverManager.stop();
-			vscode.window.showInformationMessage('Goose server stopped');
-		} catch (error) {
-			logger.error('Failed to manually stop the Goose server:', error);
-			vscode.window.showErrorMessage(`Failed to stop Goose server: ${error}`);
-		}
+		serverManager.stop();
 	});
 
-	// Command to ask Goose about selected code
-	const askAboutSelectionDisposable = vscode.commands.registerCommand('goose.askAboutSelection', () => {
-		const editor = vscode.window.activeTextEditor;
-		if (!editor) {
-			vscode.window.showInformationMessage('No active text editor found.');
-			return;
-		}
-
-		const document = editor.document;
-		const selection = editor.selection;
-		const codeReferenceManager = CodeReferenceManager.getInstance();
-
-		let codeReferenceToSend: CodeReference | null = null;
-		let prepayloadToSend: any = null;
-		let actionTaken = false; // Flag to track if we should focus
-
-		if (selection.isEmpty) {
-			// Task 1.2: No selection - use whole file
-			const fileContent = document.getText();
-			if (!fileContent) {
-				vscode.window.showInformationMessage('Active file is empty.');
-				return;
-			}
-			const fileName = path.basename(document.fileName);
-			const lineCount = document.lineCount;
-			codeReferenceToSend = {
-				// Generate ID similar to manager's pattern
-				id: `${fileName}-1-${lineCount}-${Date.now()}`,
-				filePath: document.uri.fsPath,
-				fileName: fileName,
-				startLine: 1, // 1-based
-				endLine: lineCount, // 1-based
-				selectedText: fileContent, // Use correct property name
-				languageId: document.languageId
-			};
-			logger.info(`No selection, creating reference for whole file: ${codeReferenceToSend.fileName}`);
-			actionTaken = true;
-
-		} else {
-			// Selection exists
-			const selectedLines = selection.end.line - selection.start.line + 1;
-
-			if (selectedLines >= SELECTION_LINE_LIMIT_FOR_PREPEND) {
-				// Task 1.3: >= 100 lines - use manager to create code reference chip
-				codeReferenceToSend = codeReferenceManager.getCodeReferenceFromSelection();
-				if (codeReferenceToSend) {
-					logger.info(`Selection >= ${SELECTION_LINE_LIMIT_FOR_PREPEND} lines, creating code reference chip.`);
-					actionTaken = true;
-				} else {
-					// Should not happen if selection is not empty, but good practice
-					logger.warn('getCodeReferenceFromSelection returned null despite non-empty selection.');
-				}
-			} else {
-				// Task 1.4: < 100 lines - prepare message with code
-				const selectedText = document.getText(selection);
-				prepayloadToSend = {
-					content: selectedText,
-					fileName: path.basename(document.fileName),
-					languageId: document.languageId,
-					// Add line numbers to the payload
-					startLine: selection.start.line + 1, // VS Code lines are 0-based, display is 1-based
-					endLine: selection.end.line + 1
-				};
-				logger.info(`Selection < ${SELECTION_LINE_LIMIT_FOR_PREPEND} lines (${prepayloadToSend.startLine}-${prepayloadToSend.endLine}), preparing message with code.`);
-				actionTaken = true;
-			}
-		}
-
-		// Send the appropriate message to the webview
-		if (codeReferenceToSend) {
-			provider.postMessage({ // Use the new postMessage method
-				command: MessageType.ADD_CODE_REFERENCE,
-				codeReference: codeReferenceToSend
-			});
-		} else if (prepayloadToSend) {
-			provider.postMessage({ // Use the new postMessage method
-				command: MessageType.PREPARE_MESSAGE_WITH_CODE,
-				payload: prepayloadToSend
-			});
-		}
-
-		// Focus the chat view and input only if an action was taken
-		if (actionTaken) {
-			vscode.commands.executeCommand('goose.chatView.focus');
-			provider.postMessage({ // Use the new postMessage method
-				command: MessageType.FOCUS_CHAT_INPUT
-			});
-		}
+	// Register command to open settings
+	const openSettingsDisposable = vscode.commands.registerCommand('goose.openSettings', () => {
+		vscode.commands.executeCommand('workbench.action.openSettings', '@ext:prempillai.wingman-goose');
 	});
+
+	// Register command to ask about selected code
+	// --->>> UPDATED: Use the exported handler
+	const askAboutSelectionDisposable = vscode.commands.registerCommand('goose.askAboutSelection',
+		() => handleAskAboutSelectionCommand(provider, codeReferenceManager) // Pass dependencies
+	);
+
+	// Register Code Action provider
+	const codeActionRegistration = vscode.languages.registerCodeActionsProvider(
+		{ scheme: 'file' }, // Apply to all file types
+		new GooseCodeActionProvider()
+	);
 
 	// Register session management commands
 	const listSessionsDisposable = vscode.commands.registerCommand('goose.listSessions', async () => {
@@ -901,12 +877,12 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// --- Add Configuration Change Listener for Logging ---
 	const loggingConfigListener = vscode.workspace.onDidChangeConfiguration(event => {
-        if (event.affectsConfiguration('goose.logging.enabled') || event.affectsConfiguration('goose.logging.level')) {
-            logger.info('Logging configuration changed, updating logger...');
-            logger.updateConfiguration();
-        }
-    });
-    // --- End Configuration Change Listener ---
+		if (event.affectsConfiguration('goose.logging.enabled') || event.affectsConfiguration('goose.logging.level')) {
+			logger.info('Logging configuration changed, updating logger...');
+			logger.updateConfiguration();
+		}
+	});
+	// --- End Configuration Change Listener ---
 
 	// Register command to show logs
 	const showLogsDisposable = vscode.commands.registerCommand('goose.showLogs', () => {
@@ -918,9 +894,9 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		viewRegistration,
 		helloDisposable,
-		startDisposable,
 		startServerDisposable,
 		stopServerDisposable,
+		openSettingsDisposable, // Add open settings disposable
 		askAboutSelectionDisposable,
 		codeActionRegistration,
 		listSessionsDisposable,
@@ -928,6 +904,20 @@ export function activate(context: vscode.ExtensionContext) {
 		loggingConfigListener,
 		showLogsDisposable
 	);
+
+	logger.info('[Activate] About to call serverManager.start()'); // New log
+	// Start the server (if not already running and enabled)
+	serverManager.start().then(started => {
+		if (started) {
+			logger.info('[Activate] ServerManager.start() promise resolved true (started successfully).');
+		} else {
+			logger.info('[Activate] ServerManager.start() promise resolved false (did not start, e.g., config error, already running).');
+		}
+	}).catch(error => {
+		logger.error('[Activate] ServerManager.start() promise rejected with error:', error);
+	});
+
+	logger.info('Goose extension activated.');
 }
 
 // This method is called when your extension is deactivated

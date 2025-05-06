@@ -346,7 +346,7 @@ suite('ServerManager Tests', () => {
         serverInfo.process.emit('close', 1);
 
         sinon.assert.calledWith(exitListener, 1);
-        assert.strictEqual(serverManager.getStatus(), ServerStatus.STOPPED);
+        assert.strictEqual(serverManager.getStatus(), ServerStatus.ERROR);
     });
 
     test('should handle server process exit with null code', async () => {
@@ -366,7 +366,7 @@ suite('ServerManager Tests', () => {
         serverInfo.process.emit('close', null);
 
         sinon.assert.calledWith(exitListener, null);
-        assert.strictEqual(serverManager.getStatus(), ServerStatus.STOPPED);
+        assert.strictEqual(serverManager.getStatus(), ServerStatus.ERROR);
     });
 
     test('should not emit server exit event when stopping server manually', async () => {
