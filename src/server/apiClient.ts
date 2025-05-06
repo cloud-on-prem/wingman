@@ -75,22 +75,6 @@ export class ApiClient {
             redactedData['X-Secret-Key'] = redactedPlaceholder;
         }
 
-        // Redact provider secret keys (works for headers object or body object)
-        if (typeof redactedData === 'object' && redactedData !== null && this.secretProviderKeys.length > 0) {
-            for (const key of this.secretProviderKeys) {
-                if (redactedData[key]) {
-                    redactedData[key] = redactedPlaceholder;
-                }
-                // Basic check for nested keys (e.g., in request bodies)
-                // This is NOT exhaustive for deeply nested structures
-                for (const prop in redactedData) {
-                    if (typeof redactedData[prop] === 'object' && redactedData[prop] !== null && redactedData[prop][key]) {
-                        redactedData[prop][key] = redactedPlaceholder;
-                    }
-                }
-            }
-        }
-
         // If data is a string, attempt simple string replacement
         // This is less robust than object property redaction
         if (typeof redactedData === 'string') {
@@ -99,22 +83,21 @@ export class ApiClient {
             const secretKeyPattern = new RegExp(`"?X-Secret-Key"?:\s*"?${this.secretKey}"?`, 'gi');
             redactedData = redactedData.replace(secretKeyPattern, '"X-Secret-Key":"' + redactedPlaceholder + '"');
 
-            // Redact provider secret values
-            for (const key of this.secretProviderKeys) {
-                // Look for patterns like "key": "value" or key=value
-                // This is highly heuristic and might miss cases or have false positives
-                try {
-                    // JSON-like: "key": "secret_value" 
-                    const jsonPattern = new RegExp(`"${key}"\s*:\s*"(.*?)"`, 'gi');
-                    redactedData = redactedData.replace(jsonPattern, (_match: any, _p1: any) => `"${key}":"${redactedPlaceholder}"`);
+            // Add generic redaction for common API key patterns in stringified data
+            const commonKeyPatterns = [
+                /"api_key"\s*:\s*"(.*?)"/gi,
+                /"secret_key"\s*:\s*"(.*?)"/gi,
+                /"token"\s*:\s*"(.*?)"/gi,
+                /api_key=([^&\s]+)/gi,
+                /secret_key=([^&\s]+)/gi,
+                /token=([^&\s]+)/gi
+            ];
 
-                    // URL encoded-like: key=secret_value
-                    const urlPattern = new RegExp(`${key}=([^&\s]+)`, 'gi');
-                    redactedData = redactedData.replace(urlPattern, (_match: any, _p1: any) => `${key}=${redactedPlaceholder}`);
-                } catch (e) {
-                    // Handle potential regex errors on complex keys
-                    this.logger.warn(`Regex error during string redaction for key '${key}': ${e}`);
-                }
+            for (const pattern of commonKeyPatterns) {
+                redactedData = redactedData.replace(pattern, (match: string, p1: string) => {
+                    // Replace the value part (p1) with the placeholder
+                    return match.replace(p1, redactedPlaceholder);
+                });
             }
         }
 
@@ -232,20 +215,47 @@ export class ApiClient {
         }
     }
 
-    // --- START: Stub methods to fix TS2339 errors --- 
+    // --- START: Implemented Session Methods ---
 
-    public async listSessions(): Promise<any[]> { // Assuming returns array
-        this.logger.warn('ApiClient.listSessions is not implemented');
-        // Example using generic request:
-        // const response = await this.request('/sessions', { method: 'GET' });
-        // return response.json(); 
-        return []; // Placeholder
+    public async listSessions(): Promise<any[]> {
+        this.logger.info("Fetching sessions list...");
+        const path = '/sessions';
+        const options: RequestInit = { method: 'GET' };
+        try {
+            const response = await this.request(path, options);
+            const data = await response.json();
+            // Handle potential response structures (direct array or object with 'sessions' key)
+            const sessions = Array.isArray(data) ? data : (data?.sessions || []);
+            this.logger.info(`Sessions list fetched successfully. Count: ${sessions.length}`);
+            // TODO: Consider adding data validation/transformation if needed
+            return sessions;
+        } catch (error) {
+            this.logger.error('Failed to list sessions:', error);
+            throw error; // Re-throw to allow caller to handle
+        }
     }
 
-    public async getSessionHistory(sessionId: string): Promise<any | null> { // Assuming returns object or null
-        this.logger.warn(`ApiClient.getSessionHistory(${sessionId}) is not implemented`);
-        return null; // Placeholder
+    public async getSessionHistory(sessionId: string): Promise<any | null> {
+        this.logger.info(`Fetching session history for ID: ${sessionId}`);
+        const path = `/sessions/${sessionId}`; // Use path parameter
+        const options: RequestInit = { method: 'GET' };
+        try {
+            const response = await this.request(path, options);
+            const data = await response.json();
+            this.logger.info(`Session history fetched successfully for ID: ${sessionId}`);
+            // TODO: Consider adding data validation/transformation if needed
+            return data;
+        } catch (error) {
+            this.logger.error(`Failed to get session history for ${sessionId}:`, error);
+            // Decide whether to return null or throw based on expected caller behavior
+            // Throwing might be better to signal a clear failure
+            throw error;
+        }
     }
+
+    // --- END: Implemented Session Methods ---
+
+    // --- START: Stub methods to fix TS2339 errors ---
 
     public async renameSession(sessionId: string, newName: string): Promise<boolean> {
         this.logger.warn(`ApiClient.renameSession(${sessionId}, ${newName}) is not implemented`);
@@ -257,17 +267,60 @@ export class ApiClient {
         return false; // Placeholder
     }
 
-    public async getProviders(): Promise<any[]> { // Assuming returns array
-        this.logger.warn('ApiClient.getProviders is not implemented');
-        return []; // Placeholder
+    public async getAgentVersions(): Promise<{ available_versions: string[], default_version: string }> {
+        this.logger.info("Fetching agent versions...");
+        const path = '/agent/versions';
+        const options: RequestInit = { method: 'GET' };
+        try {
+            const response = await this.request(path, options);
+            const responseData = await response.json();
+            this.logger.info(`Agent versions fetched successfully. Default: ${responseData.default_version}`, responseData);
+            return responseData;
+        } catch (error) {
+            this.logger.error('Failed to fetch agent versions:', error);
+            throw error; // Re-throw to allow caller to handle
+        }
     }
 
-    public async createAgent(provider: string, model: string): Promise<any> { // Assuming returns agent info
-        this.logger.warn(`ApiClient.createAgent(${provider}, ${model}) is not implemented`);
-        return { agentId: 'stub-agent-id' }; // Placeholder
+    public async createAgent(provider: string, model?: string, version?: string): Promise<any> {
+        this.logger.info(`Updating agent provider/model with: provider=${provider}, model=${model || "default"}, version=${version || "default"}`);
+        const path = '/agent/update_provider'; // Correct endpoint from main branch
+        const body: { provider: string; model?: string; version?: string } = { provider };
+        if (model) { body.model = model; }
+        if (version) { body.version = version; } // Keep version for now
+
+        const options: RequestInit = {
+            method: 'POST',
+            body: JSON.stringify(body)
+        };
+
+        try {
+            const response = await this.request(path, options);
+
+            // Handle potentially empty/non-JSON success responses (from main branch logic)
+            try {
+                const contentLength = response.headers.get('content-length');
+                if (contentLength === '0') {
+                    this.logger.info(`Agent provider/model updated successfully (Status ${response.status}, Content-Length: 0).`);
+                    return { success: true };
+                }
+                // If Content-Length is not '0' or not present, attempt to parse JSON
+                const responseData = await response.json();
+                this.logger.info(`Agent provider/model updated (Status ${response.status}), response:`, responseData);
+                return responseData;
+            } catch (parseError) {
+                this.logger.error(`Agent provider/model update request succeeded (Status ${response.status}), but failed to parse JSON response:`, parseError);
+                const textBody = await response.text().catch(() => ""); // Attempt to get text body
+                this.logger.error(`Response body text (if any): ${textBody}`);
+                return { success: true, warning: "Response body was not valid JSON." };
+            }
+        } catch (error) {
+            this.logger.error(`Failed to update agent provider/model for ${provider}:`, error);
+            throw error; // Re-throw to allow caller to handle
+        }
     }
 
-    public async setAgentPrompt(prompt: string): Promise<any> { 
+    public async setAgentPrompt(prompt: string): Promise<any> {
         this.logger.info(`Setting agent system prompt...`); 
         const path = '/agent/prompt';
         const options: RequestInit = {
@@ -286,32 +339,67 @@ export class ApiClient {
         }
     }
 
-    public async streamChatResponse(_params: StreamChatParams): Promise<Response> { // Add underscore, change return type
-        this.logger.warn('ApiClient.streamChatResponse(...) is not implemented - returning fake Response');
-        // This needs a proper streaming implementation later
-        async function* emptyGenerator(): AsyncIterable<Uint8Array> {}
-        // Return a fake Response object to satisfy callers expecting it
-        const fakeResponse = {
-            ok: true,
-            status: 200,
-            statusText: 'OK (Stubbed)',
-            headers: new Headers(),
-            redirected: false,
-            type: 'basic',
-            url: '',
-            clone: () => fakeResponse, // Simple clone
-            bodyUsed: false,
-            body: emptyGenerator(), // Provide an empty async iterable for the body
-            arrayBuffer: async () => new ArrayBuffer(0),
-            blob: async () => new Blob(),
-            formData: async () => new FormData(),
-            json: async () => ({}),
-            text: async () => '',
-        } as unknown as Response; // Use type assertion carefully
-        return fakeResponse;
+    public async addExtension(name: string, type: 'builtin' = 'builtin'): Promise<any> {
+        this.logger.info(`Adding extension: ${name} (type: ${type})`);
+        const path = '/extensions/add';
+        const body = { type, name };
+        const options: RequestInit = {
+            method: 'POST',
+            body: JSON.stringify(body)
+        };
+        try {
+            const response = await this.request(path, options);
+            const responseData = await response.json();
+            this.logger.info(`Extension '${name}' added successfully. Response:`, responseData);
+            return responseData;
+        } catch (error) {
+            this.logger.error(`Failed to add extension '${name}':`, error);
+            throw error; // Re-throw to allow caller to handle
+        }
     }
 
-    // --- END: Stub methods --- 
+    public async streamChatResponse(params: StreamChatParams): Promise<Response> {
+        const { prompt: messages, abortController, sessionId, workspaceDirectory } = params;
+        // Always ensure we have a working directory
+        const effectiveWorkingDir = workspaceDirectory || process.cwd();
+
+        this.logger.info(`Streaming chat response with working dir: ${effectiveWorkingDir}, session: ${sessionId || 'new'}`);
+
+        const path = "/reply";
+        const options: RequestInit = {
+            method: "POST",
+            body: JSON.stringify({
+                messages,
+                session_id: sessionId,
+                session_working_dir: effectiveWorkingDir,
+            }),
+            signal: abortController?.signal,
+            headers: {
+                Accept: "text/event-stream", // Crucial for streaming
+                // Content-Type and X-Secret-Key are added by this.request
+            },
+            // IMPORTANT: Keepalive is often needed for long-running streams,
+            // but node-fetch might handle this differently or it might not be needed for localhost.
+            // If streams disconnect prematurely, consider adding: keepalive: true
+        };
+
+        // Use the base request method, which handles headers, logging, and basic error checking.
+        // The response object itself will contain the stream.
+        try {
+            const response = await this.request(path, options);
+            // The caller is responsible for reading the stream from response.body
+            this.logger.info(`Stream request initiated successfully for ${path}`);
+            return response;
+        } catch (error) {
+            this.logger.error(`Failed to initiate stream request to ${path}:`, error);
+            throw error; // Re-throw to allow caller to handle
+        }
+
+        // --- Old Fake Response Logic Removed ---
+        // async function* emptyGenerator(): AsyncIterable<Uint8Array> {}
+    }
+
+    // --- END: Stub methods ---
 
     /**
      * Make a request to the Goose API

@@ -237,12 +237,10 @@ suite('ServerManager Tests', () => {
         // Verify startGoosed was called
         sinon.assert.calledOnce(startGoosedStub);
 
-        // Verify agent configuration calls in order
-        sinon.assert.callOrder(
-            mockApiClient.getProviders,
-            mockApiClient.setSecretProviderKeys,
-            mockApiClient.createAgent
-        );
+        // Verify createAgent was called (getProviders and setSecretProviderKeys are removed)
+        sinon.assert.calledOnce(mockApiClient.createAgent);
+        // Optionally, verify it was called with the correct arguments from the stubbed config
+        sinon.assert.calledWith(mockApiClient.createAgent, 'test-provider', 'test-model');
     });
 
     test('should return server port after started', async () => {

@@ -240,25 +240,6 @@ export class ServerManager {
         }
 
         try {
-            this.logger.info(`Fetching available providers...`);
-            const providers = await this.apiClient.getProviders();
-            this.logger.debug('Available providers response:', providers);
-
-            // Find the configured provider and extract its secret keys
-            const activeProviderConfig = providers.find((p: any) => p.name === this.gooseProvider);
-            let secretKeys: string[] = [];
-            if (activeProviderConfig && Array.isArray(activeProviderConfig.config_keys)) {
-                secretKeys = activeProviderConfig.config_keys
-                    .filter((keyInfo: any) => keyInfo.is_secret === true)
-                    .map((keyInfo: any) => keyInfo.key);
-                this.logger.info(`Identified ${secretKeys.length} secret keys for provider '${this.gooseProvider}': ${secretKeys.join(', ')}`);
-            } else {
-                this.logger.warn(`Could not find configuration or secret keys for provider '${this.gooseProvider}' in /agent/providers response.`);
-            }
-
-            // Set the identified secret keys in the ApiClient for redaction
-            this.apiClient.setSecretProviderKeys(secretKeys);
-
             // Ensure provider and model are set before creating agent
             if (!this.gooseProvider || !this.gooseModel) {
                 this.logger.error('Goose provider or model is not set. Cannot create agent.');
@@ -267,8 +248,25 @@ export class ServerManager {
                 return; // Prevent agent creation if config is missing
             }
 
-            this.logger.info(`Configuring agent with provider: ${this.gooseProvider}, model: ${this.gooseModel || 'default'}`);
-            await this.apiClient.createAgent(this.gooseProvider, this.gooseModel); // Use the correct API client method
+            // Step 1: Get available agent versions
+            this.logger.info("Fetching agent versions...");
+            const versionsInfo = await this.apiClient.getAgentVersions();
+            const agentVersion = versionsInfo.default_version; // Use the default version
+
+            // Step 2: Add the 'developer' extension (Trying this before createAgent)
+            this.logger.info("Adding 'developer' extension to agent...");
+            await this.apiClient.addExtension('developer');
+
+            // Step 3: Create the agent using the fetched version
+            this.logger.info(`Configuring agent with provider: ${this.gooseProvider}, model: ${this.gooseModel || 'default'}, version: ${agentVersion}`);
+            await this.apiClient.createAgent(this.gooseProvider, this.gooseModel, agentVersion);
+
+            // Step 4: Set the initial system prompt
+            this.logger.info("Setting initial agent system prompt...");
+            await this.apiClient.setAgentPrompt(vscodePrompt); // Use the defined prompt
+
+            this.logger.info("Agent configuration complete.");
+
         } catch (error) {
             this.logger.error('Error configuring agent:', error);
             this.eventEmitter.emit(ServerEvents.ERROR, error);

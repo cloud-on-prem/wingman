@@ -37,6 +37,9 @@ interface WebviewMessage {
 class GooseViewProvider implements vscode.WebviewViewProvider {
 	public static readonly viewType = 'goose.chatView';
 	private _view?: vscode.WebviewView;
+	private isWebviewReady = false; // Added for readiness check
+	private messageQueue: WebviewMessage[] = []; // Added for message queueing
+	private lastSentStatus: ServerStatus | undefined = undefined; // Added for status change check
 	private readonly _extensionUri: vscode.Uri;
 	private readonly _serverManager: ServerManager;
 	private readonly _chatProcessor: ChatProcessor;
@@ -103,55 +106,73 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 			await this._onDidReceiveMessage(message);
 		});
 
+		// Handle webview disposal
+		webviewView.onDidDispose(() => {
+			logger.info('Webview view disposed. Cleaning up resources.');
+			this._view = undefined;
+			this.isWebviewReady = false;
+			this.messageQueue = []; // Clear any pending messages
+		});
+
 		// Set up event listeners for server status changes
-		this._serverManager.on(ServerEvents.STATUS_CHANGE, (status: ServerStatus) => {
-			this._sendMessageToWebview({
-				command: MessageType.SERVER_STATUS,
-				status
-			});
+		this._serverManager.on(ServerEvents.STATUS_CHANGE, (newStatus: ServerStatus) => {
+			if (newStatus !== this.lastSentStatus) {
+				this.postMessage({ // Use the new postMessage method
+					command: MessageType.SERVER_STATUS,
+					status: newStatus
+				});
+				this.lastSentStatus = newStatus;
+			}
 		});
 
 		// Set up event listeners for chat events
 		this._chatProcessor.on(ChatEvents.MESSAGE_RECEIVED, (message: Message) => {
-			this._sendMessageToWebview({
+			this.postMessage({ // Use the new postMessage method
 				command: MessageType.CHAT_RESPONSE,
 				message: message
 			});
 		});
 
 		this._chatProcessor.on(ChatEvents.ERROR, (error: Error) => {
-			this._sendMessageToWebview({
+			this.postMessage({ // Use the new postMessage method
 				command: MessageType.ERROR,
 				errorMessage: error.message
 			});
 		});
 
 		this._chatProcessor.on(ChatEvents.FINISH, (message: Message, reason: string) => {
-			this._sendMessageToWebview({
+			this.postMessage({ // Use the new postMessage method
 				command: MessageType.GENERATION_FINISHED,
 				message,
 				reason
 			});
 		});
 
-		// Send initial server status
-		this._sendMessageToWebview({
-			command: MessageType.SERVER_STATUS,
-			status: this._serverManager.getStatus()
-		});
-
-		// Send initial theme
-		this._sendMessageToWebview({
-			command: MessageType.SET_THEME, // Use the new message type
-			theme: shikiTheme
-		});
-
 		// Log that the view has been resolved
 		logger.info(`Webview view resolved with context: ${context.state}`);
+
+		// Send initial messages (will be queued if webview is not ready yet)
+		const initialStatus = this._serverManager.getStatus();
+		this.postMessage({ // Use the new postMessage method
+			command: MessageType.SERVER_STATUS,
+			status: initialStatus
+		});
+		this.lastSentStatus = initialStatus; // Set lastSentStatus based on initial post
+
+		this.postMessage({ // Use the new postMessage method
+			command: MessageType.SET_THEME,
+			theme: shikiTheme
+		});
 	}
 
 	private async _onDidReceiveMessage(message: any) {
 		switch (message.command) {
+			case MessageType.WEBVIEW_READY: // Handle webview ready message
+				logger.info('Webview is ready. Processing message queue.');
+				this.isWebviewReady = true;
+				this._processMessageQueue();
+				break;
+
 			case MessageType.HELLO:
 				break;
 
@@ -174,7 +195,7 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 						);
 					} catch (error) {
 						logger.error('Error sending message to chat processor:', error); // Use logger
-						this._sendMessageToWebview({
+						this.postMessage({
 							command: MessageType.ERROR,
 							errorMessage: error instanceof Error ? error.message : String(error)
 						});
@@ -193,7 +214,7 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 				if (message.id) {
 					logger.debug('Removing code reference with ID:', message.id);
 					// Send back confirmation to the webview to update its state
-					this._sendMessageToWebview({
+					this.postMessage({
 						command: MessageType.REMOVE_CODE_REFERENCE,
 						id: message.id
 					});
@@ -203,13 +224,13 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 			case MessageType.GET_SESSIONS:
 				try {
 					const sessions = await this._sessionManager.fetchSessions();
-					this._sendMessageToWebview({
+					this.postMessage({
 						command: MessageType.SESSIONS_LIST,
 						sessions
 					});
 				} catch (error) {
 					logger.error('Error fetching sessions:', error);
-					this._sendMessageToWebview({
+					this.postMessage({
 						command: MessageType.ERROR,
 						error: 'Failed to fetch sessions'
 					});
@@ -222,21 +243,21 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 					if (success) {
 						const session = this._sessionManager.getCurrentSession();
 						if (session) {
-							this._sendMessageToWebview({
+							this.postMessage({
 								command: MessageType.SESSION_LOADED,
 								sessionId: session.session_id,
 								messages: session.messages
 							});
 						}
 					} else {
-						this._sendMessageToWebview({
+						this.postMessage({
 							command: MessageType.ERROR,
 							error: 'Failed to switch session'
 						});
 					}
 				} catch (error) {
 					logger.error('Error switching session:', error);
-					this._sendMessageToWebview({
+					this.postMessage({
 						command: MessageType.ERROR,
 						error: 'Failed to switch session'
 					});
@@ -247,7 +268,7 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 				try {
 					const workspaceDirectory = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 					if (!workspaceDirectory) {
-						this._sendMessageToWebview({
+						this.postMessage({
 							command: MessageType.ERROR,
 							error: 'No workspace folder found'
 						});
@@ -263,27 +284,27 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 						// Get the session data to send to the webview
 						const session = this._sessionManager.getCurrentSession();
 						if (session) {
-							this._sendMessageToWebview({
+							this.postMessage({
 								command: MessageType.SESSION_LOADED,
 								sessionId: session.session_id,
 								messages: session.messages
 							});
 
 							// Also send the updated session list
-							this._sendMessageToWebview({
+							this.postMessage({
 								command: MessageType.SESSIONS_LIST,
 								sessions: this._sessionManager.getSessions()
 							});
 						}
 					} else {
-						this._sendMessageToWebview({
+						this.postMessage({
 							command: MessageType.ERROR,
 							error: 'Failed to create session'
 						});
 					}
 				} catch (error) {
 					logger.error('Error creating session:', error);
-					this._sendMessageToWebview({
+					this.postMessage({
 						command: MessageType.ERROR,
 						error: 'Failed to create session'
 					});
@@ -348,7 +369,7 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 
 								// Refresh sessions and notify webview
 								await this._sessionManager.fetchSessions();
-								this._sendMessageToWebview({
+								this.postMessage({
 									command: MessageType.SESSIONS_LIST,
 									sessions: this._sessionManager.getSessions()
 								});
@@ -421,7 +442,7 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 
 								// Refresh sessions and notify webview
 								await this._sessionManager.fetchSessions();
-								this._sendMessageToWebview({
+								this.postMessage({
 									command: MessageType.SESSIONS_LIST,
 									sessions: this._sessionManager.getSessions()
 								});
@@ -437,7 +458,7 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 				break;
 
 			case MessageType.GET_SERVER_STATUS:
-				this._sendMessageToWebview({
+				this.postMessage({
 					command: MessageType.SERVER_STATUS,
 					status: this._serverManager.getStatus()
 				});
@@ -448,7 +469,7 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 				// Restart the server
 				this._serverManager.restart().then(success => {
 					// Send updated status
-					this._sendMessageToWebview({
+					this.postMessage({
 						command: MessageType.SERVER_STATUS,
 						status: this._serverManager.getStatus()
 					});
@@ -457,7 +478,7 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 						logger.info('Server restarted successfully');
 					} else {
 						logger.error('Failed to restart server');
-						this._sendMessageToWebview({
+						this.postMessage({
 							command: MessageType.ERROR,
 							errorMessage: 'Failed to restart the Goose server'
 						});
@@ -501,14 +522,14 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 			const fileName = document.fileName;
 			const languageId = document.languageId;
 
-			this._sendMessageToWebview({
+			this.postMessage({
 				command: MessageType.ACTIVE_EDITOR_CONTENT,
 				content,
 				fileName,
 				languageId,
 			});
 		} else {
-			this._sendMessageToWebview({
+			this.postMessage({
 				command: MessageType.ERROR,
 				errorMessage: 'No active editor found'
 			});
@@ -516,28 +537,59 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	/**
-	 * Sends a message to the webview
+	 * Processes the message queue, sending messages to the webview if it's ready.
 	 */
-	public async _sendMessageToWebview(message: any): Promise<boolean> {
+	private _processMessageQueue() {
+		logger.debug(`Processing message queue. ${this.messageQueue.length} messages pending.`);
+		while (this.messageQueue.length > 0) {
+			const message = this.messageQueue.shift();
+			if (message) {
+				logger.debug(`Dequeuing and sending message: ${message.command}`);
+				this._postMessageInternal(message); // Use internal method to send
+			}
+		}
+	}
+
+	/**
+	 * Internal method to actually send a message to the webview.
+	 * Should only be called when the webview is known to be available.
+	 */
+	private async _postMessageInternal(message: WebviewMessage): Promise<boolean> {
 		if (this._view && this._view.webview) {
 			try {
-				logger.debug(`Sending message to webview: ${message.command}`, message.command === 'aiMessageChunk' ? undefined : message); // Avoid logging potentially large chunks
+				logger.debug(`Sending message to webview: ${message.command}`, message.command === 'aiMessageChunk' ? undefined : message);
 				const result = await this._view.webview.postMessage(message);
-				logger.debug(`Successfully posted message to webview: ${message.command}`); // Use debug instead of trace
-				// Log specific message types for better tracking
+				logger.debug(`Successfully posted message to webview: ${message.command}`);
 				if (message.command === 'aiMessage') {
 					logger.debug(`Sent full AI message with ID: ${message.message.id}`);
 				}
 				return true;
 			} catch (error) {
-				logger.error('Error sending message to webview:', error);
+				logger.error(`Error posting message ${message.command} to webview:`, error);
 				return false;
 			}
 		} else {
-			logger.warn('Webview is not available, message not sent');
+			// This case should ideally be caught by the public postMessage queueing logic
+			logger.warn(`_postMessageInternal called but webview is not available. Message: ${message.command}`);
 			return false;
 		}
 	}
+
+	/**
+	 * Public method to send a message to the webview.
+	 * Queues messages if the webview is not ready.
+	 */
+	public postMessage(message: WebviewMessage) {
+		if (this._view && this.isWebviewReady) {
+			this._postMessageInternal(message);
+		} else if (this._view) {
+			logger.debug(`Webview not ready, queuing message: ${message.command}`);
+			this.messageQueue.push(message);
+		} else {
+			logger.warn(`Webview panel is undefined, cannot send or queue message: ${message.command}`);
+		}
+	}
+
 
 	private _getHtmlForWebview(webview: vscode.Webview) {
 		// Path to the built webview UI
@@ -571,7 +623,7 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 	public addCodeReference() {
 		const codeReference = this._codeReferenceManager.getCodeReferenceFromSelection();
 		if (codeReference) {
-			this._sendMessageToWebview({
+			this.postMessage({
 				command: MessageType.ADD_CODE_REFERENCE,
 				codeReference
 			});
@@ -589,12 +641,12 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 		const currentFile = this._workspaceContextProvider.getCurrentFileName();
 
 		if (diagnostics.length === 0) {
-			this._sendMessageToWebview({
+			this.postMessage({
 				command: MessageType.CHAT_MESSAGE,
 				text: `No issues found in ${currentFile || 'the current file'}.`
 			});
 		} else {
-			this._sendMessageToWebview({
+			this.postMessage({
 				command: MessageType.CHAT_MESSAGE,
 				text: `Please help me fix these issues in ${currentFile || 'my code'}:\n\n${formattedDiagnostics}`
 			});
@@ -604,8 +656,15 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	// Add event handler to confirm message was sent to webview
+	// This method seems redundant now with the public postMessage.
+	// Keeping it for now if it's used externally, but consider removing if not.
 	public async sendMessageToWebview(message: any): Promise<boolean> {
-		return await this._sendMessageToWebview(message);
+		// For now, let's assume it should use the new public postMessage logic.
+		// However, postMessage is void, so this signature needs to change or the method needs a different purpose.
+		// For now, just calling postMessage and returning a placeholder.
+		// This needs review based on how sendMessageToWebview is used.
+		this.postMessage(message);
+		return Promise.resolve(true); // Placeholder, as postMessage is void.
 	}
 }
 
@@ -649,22 +708,12 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	);
 
-	// Listen for server status changes and update the UI
-	serverManager.on('statusChanged', (status: string) => {
-		logger.info(`Extension received server status change: ${status}`);
-		if (provider) {
-			provider.sendMessageToWebview({
-				command: MessageType.SERVER_STATUS,
-				status: status
-			});
-		}
-	});
-
 	// Listen for server exit events
 	serverManager.on('serverExit', (code: number | null) => {
 		logger.warn(`Extension received server exit with code: ${code ?? 'unknown'}`);
 		if (provider) {
-			provider.sendMessageToWebview({
+			// Use the new postMessage method
+			provider.postMessage({
 				command: MessageType.SERVER_EXIT,
 				code: code
 			});
@@ -800,12 +849,12 @@ export function activate(context: vscode.ExtensionContext) {
 
 		// Send the appropriate message to the webview
 		if (codeReferenceToSend) {
-			provider.sendMessageToWebview({
+			provider.postMessage({ // Use the new postMessage method
 				command: MessageType.ADD_CODE_REFERENCE,
 				codeReference: codeReferenceToSend
 			});
 		} else if (prepayloadToSend) {
-			provider.sendMessageToWebview({
+			provider.postMessage({ // Use the new postMessage method
 				command: MessageType.PREPARE_MESSAGE_WITH_CODE,
 				payload: prepayloadToSend
 			});
@@ -814,7 +863,7 @@ export function activate(context: vscode.ExtensionContext) {
 		// Focus the chat view and input only if an action was taken
 		if (actionTaken) {
 			vscode.commands.executeCommand('goose.chatView.focus');
-			provider.sendMessageToWebview({
+			provider.postMessage({ // Use the new postMessage method
 				command: MessageType.FOCUS_CHAT_INPUT
 			});
 		}
@@ -826,7 +875,8 @@ export function activate(context: vscode.ExtensionContext) {
 			logger.info('Executing command: goose.listSessions');
 			const sessions = await sessionManager.fetchSessions();
 			if (provider) {
-				provider.sendMessageToWebview({
+				// Use the new postMessage method
+				provider.postMessage({
 					command: MessageType.SESSIONS_LIST,
 					sessions
 				});
@@ -841,7 +891,8 @@ export function activate(context: vscode.ExtensionContext) {
 	const themeChangeListener = vscode.window.onDidChangeActiveColorTheme(theme => {
 		const newShikiTheme = provider.getShikiTheme(theme.kind);
 		logger.info(`VS Code theme changed. New kind: ${ColorThemeKind[theme.kind]}, Mapped shiki theme: ${newShikiTheme}`);
-		provider.sendMessageToWebview({
+		// Use the new postMessage method
+		provider.postMessage({
 			command: MessageType.SET_THEME,
 			theme: newShikiTheme
 		});

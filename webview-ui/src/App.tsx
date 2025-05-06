@@ -143,6 +143,13 @@ const App: React.FC = () => {
         };
     }, [handleFocusInput]);
 
+    // Send webview ready message to extension host on load
+    useEffect(() => {
+        const vscode = getVSCodeAPI();
+        vscode.postMessage({ command: MessageType.WEBVIEW_READY });
+        console.log('App: Sent WEBVIEW_READY to extension host.');
+    }, []);
+
     return (
         <div className="container">
             <Header

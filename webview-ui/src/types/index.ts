@@ -25,7 +25,9 @@ export enum MessageType {
     RESTART_SERVER = 'restartServer',
     GET_SERVER_STATUS = 'getServerStatus',
     FOCUS_CHAT_INPUT = 'focusChatInput',
-    OPEN_SETTINGS_FILE = 'openSettingsFile' // Added for opening settings
+    OPEN_SETTINGS_FILE = 'openSettingsFile', // Added for opening settings
+    SET_THEME = 'setTheme', // Added for Shiki theme synchronization
+    WEBVIEW_READY = 'webviewReady' // Added for webview readiness check
 }
 
 // Type for code references
