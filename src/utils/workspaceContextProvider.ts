@@ -1,6 +1,9 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import { logger as singletonLogger } from './logger';
+
+const logger = singletonLogger.createSource('WorkspaceContext');
 
 export interface WorkspaceContext {
     currentLanguage?: string;
@@ -122,18 +125,23 @@ export class WorkspaceContextProvider {
             { file: 'Cargo.toml', type: 'rust' }
         ];
 
+        let projectType = "unknown";
         for (const config of configFiles) {
             const configPath = path.join(rootPath, config.file);
             try {
                 if (fs.existsSync(configPath)) {
-                    return config.type;
+                    logger.debug(`Project type indicator found: ${config.file}`);
+                    projectType = config.type;
+                    break; // Found the type, no need to check further for this folder
                 }
             } catch (error) {
-                console.error(`Error checking for ${config.file}:`, error);
+                logger.error(`Error checking for project type indicator ${config.file}:`, error);
             }
         }
-
-        return "unknown";
+        if (projectType) {
+            logger.info(`Determined project type: ${projectType}`);
+        }
+        return projectType; // Return the determined type
     }
 
     /**

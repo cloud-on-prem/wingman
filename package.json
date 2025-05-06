@@ -45,17 +45,26 @@
           "default": true,
           "description": "Enable/disable the Goose extension"
         },
-        "goose.logLevel": {
+        "goose.logging.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Enable detailed logging to the **Goose Extension** output channel for debugging. Use the `Goose: Show Extension Logs` command to view logs."
+        },
+        "goose.logging.level": {
           "type": "string",
           "enum": [
-            "none",
-            "error",
-            "warn",
-            "info",
-            "debug"
+            "DEBUG",
+            "INFO",
+            "WARN",
+            "ERROR"
           ],
-          "default": "info",
-          "description": "Control the verbosity of log messages (none, error, warn, info, debug)"
+          "default": "INFO",
+          "markdownDescription": "Set the logging level. `DEBUG` is verbose."
+        },
+        "goose.logging.logSensitiveRequests": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "**WARNING:** Enable logging of potentially sensitive request/response bodies (e.g., chat content, code snippets) to the **Goose Extension** output channel. Secrets like API keys will still be redacted. Only enable this for detailed debugging with awareness of the data being logged."
         },
         "goose.server.path": {
           "type": "string",

@@ -1,6 +1,7 @@
 import * as assert from 'assert'; // Use Node's built-in assert
 import { ApiClient, ApiClientConfig } from '../../server/apiClient';
 import sinon from 'sinon';
+import { Logger } from '../../utils/logger'; // Import Logger class for stubbing
 
 // Mock the global fetch function
 const mockFetch = sinon.stub();
@@ -9,16 +10,13 @@ global.fetch = mockFetch as any;
 suite('ApiClient Tests', () => { // Changed describe to suite
     let apiClient: ApiClient;
     let config: ApiClientConfig;
-    const mockLogger = {
-        info: sinon.stub(),
-        error: sinon.stub(),
-    };
+    let mockLogger: sinon.SinonStubbedInstance<Logger>; // Stub the Logger class
 
     setup(() => { // Changed beforeEach to setup
         // Reset stubs before each test
         mockFetch.reset();
-        mockLogger.info.resetHistory();
-        mockLogger.error.resetHistory();
+        mockLogger = sinon.createStubInstance(Logger); // Create a stub instance of the Logger class
+        mockLogger.createSource.returnsThis(); // Make createSource return the stub for chaining
 
         config = {
             baseUrl: 'http://localhost:1234',
@@ -108,7 +106,6 @@ suite('ApiClient Tests', () => { // Changed describe to suite
                 },
                 'Expected setAgentPrompt to throw an error'
             );
-            // Removed the extra closing brace here
         });
     });
 

@@ -420,12 +420,14 @@ export class ChatProcessor {
             throw new Error('API client not available');
         }
 
-        return await apiClient.streamChatResponse(
-            this.currentMessages,
-            this.abortController,
-            sessionId,
-            workspaceDirectory
-        );
+        const params = {
+            prompt: this.currentMessages,
+            abortController: this.abortController,
+            sessionId: sessionId,
+            workspaceDirectory: workspaceDirectory,
+        };
+
+        return await apiClient.streamChatResponse(params);
     }
 
     private emit(event: ChatEvents, ...args: any[]): void {

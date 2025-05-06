@@ -16,11 +16,11 @@ import { SessionManager, SessionEvents } from './server/chat/sessionManager';
 import { MessageType } from './common-types';
 // Import config reader function
 import { getConfigFilePath } from './utils/configReader';
-// Import logging utilities
-import { DefaultLogger, getLogger, LogLevel } from './utils/logging';
+// Import the new logger singleton
+import { logger } from './utils/logger';
 
 // Create logger for the extension
-const logger = getLogger('Extension');
+// const logger = getLogger('Extension'); // OLD LOGGER REMOVED
 
 // Define line limit constant for prepending code vs. adding reference chip
 const SELECTION_LINE_LIMIT_FOR_PREPEND = 100;
@@ -147,7 +147,7 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 		});
 
 		// Log that the view has been resolved
-		console.log(`Webview view resolved with context: ${context.state}`);
+		logger.info(`Webview view resolved with context: ${context.state}`);
 	}
 
 	private async _onDidReceiveMessage(message: any) {
@@ -191,7 +191,7 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 			case MessageType.REMOVE_CODE_REFERENCE:
 				// Handle removing a code reference from the UI
 				if (message.id) {
-					console.log('Removing code reference with ID:', message.id);
+					logger.debug('Removing code reference with ID:', message.id);
 					// Send back confirmation to the webview to update its state
 					this._sendMessageToWebview({
 						command: MessageType.REMOVE_CODE_REFERENCE,
@@ -208,7 +208,7 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 						sessions
 					});
 				} catch (error) {
-					console.error('Error fetching sessions:', error);
+					logger.error('Error fetching sessions:', error);
 					this._sendMessageToWebview({
 						command: MessageType.ERROR,
 						error: 'Failed to fetch sessions'
@@ -235,7 +235,7 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 						});
 					}
 				} catch (error) {
-					console.error('Error switching session:', error);
+					logger.error('Error switching session:', error);
 					this._sendMessageToWebview({
 						command: MessageType.ERROR,
 						error: 'Failed to switch session'
@@ -282,7 +282,7 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 						});
 					}
 				} catch (error) {
-					console.error('Error creating session:', error);
+					logger.error('Error creating session:', error);
 					this._sendMessageToWebview({
 						command: MessageType.ERROR,
 						error: 'Failed to create session'
@@ -358,7 +358,7 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 						}
 					}
 				} catch (error) {
-					console.error('Error renaming session:', error);
+					logger.error('Error renaming session:', error);
 					vscode.window.showErrorMessage('Failed to rename session');
 				}
 				break;
@@ -431,7 +431,7 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 						}
 					}
 				} catch (error) {
-					console.error('Error deleting session:', error);
+					logger.error('Error deleting session:', error);
 					vscode.window.showErrorMessage('Failed to delete session');
 				}
 				break;
@@ -444,7 +444,7 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 				break;
 
 			case MessageType.RESTART_SERVER:
-				console.log('Restarting Goose server...');
+				logger.info('Restarting Goose server...');
 				// Restart the server
 				this._serverManager.restart().then(success => {
 					// Send updated status
@@ -454,9 +454,9 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 					});
 
 					if (success) {
-						console.log('Server restarted successfully');
+						logger.info('Server restarted successfully');
 					} else {
-						console.error('Failed to restart server');
+						logger.error('Failed to restart server');
 						this._sendMessageToWebview({
 							command: MessageType.ERROR,
 							errorMessage: 'Failed to restart the Goose server'
@@ -489,7 +489,7 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 				break;
 
 			default:
-				console.log(`Unhandled message: ${message.command}`);
+				logger.warn(`Unhandled message: ${message.command}`);
 		}
 	}
 
@@ -518,8 +518,25 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 	/**
 	 * Sends a message to the webview
 	 */
-	public _sendMessageToWebview(message: any) {
-		this.sendMessageToWebview(message);
+	public async _sendMessageToWebview(message: any): Promise<boolean> {
+		if (this._view && this._view.webview) {
+			try {
+				logger.debug(`Sending message to webview: ${message.command}`, message.command === 'aiMessageChunk' ? undefined : message); // Avoid logging potentially large chunks
+				const result = await this._view.webview.postMessage(message);
+				logger.debug(`Successfully posted message to webview: ${message.command}`); // Use debug instead of trace
+				// Log specific message types for better tracking
+				if (message.command === 'aiMessage') {
+					logger.debug(`Sent full AI message with ID: ${message.message.id}`);
+				}
+				return true;
+			} catch (error) {
+				logger.error('Error sending message to webview:', error);
+				return false;
+			}
+		} else {
+			logger.warn('Webview is not available, message not sent');
+			return false;
+		}
 	}
 
 	private _getHtmlForWebview(webview: vscode.Webview) {
@@ -587,32 +604,20 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	// Add event handler to confirm message was sent to webview
-	public sendMessageToWebview(message: any): void {
-		if (this._view && this._view.webview) {
-			try {
-				console.log(`Sending message to webview: ${message.command}`);
-				this._view.webview.postMessage(message);
-				console.log(`Successfully sent message to webview: ${message.command}`);
-				if (message.command === MessageType.AI_MESSAGE && message.message && message.message.id) {
-					console.log(`Sent AI message with ID: ${message.message.id}`);
-				}
-			} catch (error) {
-				console.error('Error sending message to webview:', error);
-			}
-		} else {
-			console.warn('Webview is not available, message not sent');
-		}
+	public async sendMessageToWebview(message: any): Promise<boolean> {
+		return await this._sendMessageToWebview(message);
 	}
 }
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
-	console.log('Activating Goose extension');
+    // Initial log message using the new logger
+    logger.info('Activating Goose extension...');
 
 	// Initialize logger with configuration
-	DefaultLogger.initializeFromConfig(context);
-	logger.info('Goose extension activated with log level: ' + LogLevel[DefaultLogger.getGlobalLevel()]);
+	// DefaultLogger.initializeFromConfig(context);
+	// logger.info('Goose extension activated with log level: ' + LogLevel[DefaultLogger.getGlobalLevel()]);
 
 	// Create server manager with dependencies (using defaults)
 	const serverManager = new ServerManager(context, {
@@ -646,7 +651,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Listen for server status changes and update the UI
 	serverManager.on('statusChanged', (status: string) => {
-		console.log(`Extension received server status change: ${status}`);
+		logger.info(`Extension received server status change: ${status}`);
 		if (provider) {
 			provider.sendMessageToWebview({
 				command: MessageType.SERVER_STATUS,
@@ -657,7 +662,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Listen for server exit events
 	serverManager.on('serverExit', (code: number | null) => {
-		console.log(`Extension received server exit with code: ${code}`);
+		logger.warn(`Extension received server exit with code: ${code ?? 'unknown'}`);
 		if (provider) {
 			provider.sendMessageToWebview({
 				command: MessageType.SERVER_EXIT,
@@ -669,12 +674,12 @@ export function activate(context: vscode.ExtensionContext) {
 	// Automatically start the server when the extension activates
 	serverManager.start().then(success => {
 		if (success) {
-			console.log('Goose server started automatically on extension activation');
+			logger.info('Goose server started automatically on extension activation');
 		} else {
-			console.error('Failed to automatically start the Goose server');
+			logger.error('Failed to automatically start the Goose server');
 		}
 	}).catch(error => {
-		console.error('Error starting Goose server:', error);
+		logger.error('Error starting Goose server:', error);
 	});
 
 	// Register code action provider
@@ -705,10 +710,11 @@ export function activate(context: vscode.ExtensionContext) {
 	// Command to manually start the server
 	const startServerDisposable = vscode.commands.registerCommand('goose.startServer', async () => {
 		try {
-			vscode.window.showInformationMessage('Starting Goose server...');
+			logger.info('Attempting to manually start Goose server...');
 			await serverManager.start();
 			vscode.window.showInformationMessage('Goose server started successfully');
 		} catch (error) {
+			logger.error('Failed to manually start the Goose server:', error);
 			vscode.window.showErrorMessage(`Failed to start Goose server: ${error}`);
 		}
 	});
@@ -719,6 +725,7 @@ export function activate(context: vscode.ExtensionContext) {
 			serverManager.stop();
 			vscode.window.showInformationMessage('Goose server stopped');
 		} catch (error) {
+			logger.error('Failed to manually stop the Goose server:', error);
 			vscode.window.showErrorMessage(`Failed to stop Goose server: ${error}`);
 		}
 	});
@@ -816,6 +823,7 @@ export function activate(context: vscode.ExtensionContext) {
 	// Register session management commands
 	const listSessionsDisposable = vscode.commands.registerCommand('goose.listSessions', async () => {
 		try {
+			logger.info('Executing command: goose.listSessions');
 			const sessions = await sessionManager.fetchSessions();
 			if (provider) {
 				provider.sendMessageToWebview({
@@ -824,8 +832,8 @@ export function activate(context: vscode.ExtensionContext) {
 				});
 			}
 		} catch (error) {
-			console.error('Error listing sessions:', error);
-			vscode.window.showErrorMessage('Failed to list sessions');
+			logger.error('Error listing sessions:', error);
+			vscode.window.showErrorMessage(`Failed to list sessions: ${error}`);
 		}
 	});
 
@@ -840,6 +848,15 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 	// --- End Theme Change Listener ---
 
+	// --- Add Configuration Change Listener for Logging ---
+	const loggingConfigListener = vscode.workspace.onDidChangeConfiguration(event => {
+        if (event.affectsConfiguration('goose.logging.enabled') || event.affectsConfiguration('goose.logging.level')) {
+            logger.info('Logging configuration changed, updating logger...');
+            logger.updateConfiguration();
+        }
+    });
+    // --- End Configuration Change Listener ---
+
 	// Add all disposables to the extension context's subscriptions
 	context.subscriptions.push(
 		viewRegistration,
@@ -850,7 +867,8 @@ export function activate(context: vscode.ExtensionContext) {
 		askAboutSelectionDisposable,
 		codeActionRegistration,
 		listSessionsDisposable,
-		themeChangeListener // Add the new listener here
+		themeChangeListener,
+		loggingConfigListener // Add the logging config listener
 	);
 }
 

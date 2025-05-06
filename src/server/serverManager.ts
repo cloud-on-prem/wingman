@@ -6,11 +6,11 @@ import { getBinaryPath as actualGetBinaryPath } from '../utils/binaryPath';
 import { Message } from 'src/types';
 import * as cp from 'child_process';
 import * as crypto from 'crypto';
-import { DefaultLogger, getLogger, LogLevel, Logger } from '../utils/logging';
+import { Logger, logger as singletonLogger } from '../utils/logger';
 import { readGooseConfig } from '../utils/configReader';
 
 // Get a logger instance for the ServerManager
-const logger = getLogger('ServerManager');
+const logger = singletonLogger.createSource('ServerManager');
 
 // System prompt providing context about the VS Code environment
 const vscodePrompt = `You are an AI assistant integrated into Visual Studio Code via the Goose extension.
@@ -192,22 +192,21 @@ export class ServerManager {
             });
 
             // Create API client for the server
-            this.apiClient = new this.ApiClientConstructor({
+            this.apiClient = new this.ApiClientConstructor({ // Use ApiClientConstructor
                 baseUrl: `http://127.0.0.1:${this.serverInfo.port}`,
                 secretKey: this.secretKey,
-                debug: true,
-                logger: {
-                    info: (message: string, ...args: any[]) => this.logger.info(`[ApiClient] ${message}`, ...args),
-                    error: (message: string, ...args: any[]) => this.logger.error(`[ApiClient] ${message}`, ...args)
-                }
+                logger: singletonLogger, // Pass the singleton logger
+                events: this.extensionEvents,
+                // debug flag is now handled by the logger's level itself
             });
 
-            // Configure the agent
+            // Await agent configuration
             await this.configureAgent();
 
             this.setStatus(ServerStatus.RUNNING);
-            return true;
-        } catch (error) {
+            this.logger.info('Goose server is running and agent configured.');
+            return true; // Return true on successful start and configuration
+        } catch (error: any) {
             this.logger.error('Error starting Goose server:', error);
 
             // Check for specific binary not found error
@@ -224,9 +223,9 @@ export class ServerManager {
                 );
             }
 
-            this.setStatus(ServerStatus.ERROR);
-            this.eventEmitter.emit(ServerEvents.ERROR, error);
-            return false;
+            this.setStatus(ServerStatus.ERROR); // Set status
+            this.eventEmitter.emit(ServerEvents.ERROR, error); // Emit event
+            return false; // Return false at the very end of the catch block
         }
     }
 
@@ -235,73 +234,41 @@ export class ServerManager {
      */
     private async configureAgent(): Promise<void> {
         if (!this.apiClient) {
-            this.logger.error('Cannot configure agent: API client not initialized');
-            throw new Error('API client not initialized'); // Throw to be caught by start()
+            this.logger.error('API client not initialized, cannot configure agent.');
+            vscode.window.showErrorMessage('Cannot configure AI provider: API client is not ready.');
+            return;
         }
 
         try {
-            this.logger.info('Configuring Goose agent...');
+            this.logger.info(`Fetching available providers...`);
+            const providers = await this.apiClient.getProviders();
+            this.logger.debug('Available providers response:', providers);
 
-            // --- Use Loaded Config (Must be present due to validation in start()) ---
-            const providerToUse = this.gooseProvider!; // Non-null assertion ok due to check in start()
-            const modelToUse = this.gooseModel!;     // Non-null assertion ok due to check in start()
-
-            this.logger.info(`Using Provider from Config: ${providerToUse}`);
-            this.logger.info(`Using Model from Config: ${modelToUse}`);
-            // --- End Use Loaded Config ---
-
-            let versionToUse = 'truncate'; // Default version
-
-            try {
-                // Get available versions first
-                const versions = await this.apiClient.getAgentVersions();
-                this.logger.info(`Available versions: ${JSON.stringify(versions)}`);
-
-                if (versions && versions.default_version) {
-                    versionToUse = versions.default_version;
-                    this.logger.info(`Using default version: ${versionToUse}`);
-                }
-            } catch (err) {
-                this.logger.error('Error getting versions, using default:', err);
-                // Continue with default version
+            // Find the configured provider and extract its secret keys
+            const activeProviderConfig = providers.find((p: any) => p.name === this.gooseProvider);
+            let secretKeys: string[] = [];
+            if (activeProviderConfig && Array.isArray(activeProviderConfig.config_keys)) {
+                secretKeys = activeProviderConfig.config_keys
+                    .filter((keyInfo: any) => keyInfo.is_secret === true)
+                    .map((keyInfo: any) => keyInfo.key);
+                this.logger.info(`Identified ${secretKeys.length} secret keys for provider '${this.gooseProvider}': ${secretKeys.join(', ')}`);
+            } else {
+                this.logger.warn(`Could not find configuration or secret keys for provider '${this.gooseProvider}' in /agent/providers response.`);
             }
 
-            // Create the agent with the configured provider and model
-            try {
-                this.logger.info(`Creating agent with provider: ${providerToUse}, model: ${modelToUse}, version: ${versionToUse}`);
+            // Set the identified secret keys in the ApiClient for redaction
+            this.apiClient.setSecretProviderKeys(secretKeys);
 
-                const agentResult = await this.apiClient.createAgent(
-                    providerToUse,  // Use provider from config
-                    modelToUse,      // Use model from config
-                    versionToUse     // Use the version we determined
-                );
-
-                this.logger.info(`Agent created successfully: ${JSON.stringify(agentResult)}`);
-
-                // Set the VS Code specific system prompt
-                try {
-                    this.logger.info('Setting VS Code system prompt for agent...');
-                    await this.apiClient.setAgentPrompt(vscodePrompt); // Use the constant defined earlier
-                    this.logger.info('Successfully set VS Code system prompt.');
-                } catch (promptError) {
-                    this.logger.error(`Failed to set VS Code system prompt: ${promptError}`);
-                    // Log the error but continue server startup as per plan
-                }
-
-                // Extend the agent with the VSCode developer extension
-                try {
-                    await this.apiClient.addExtension('developer');
-                    this.logger.info('Added developer extension to agent');
-                } catch (extensionErr) { // Renamed variable to avoid conflict
-                    this.logger.error('Failed to add developer extension:', extensionErr);
-                    // Continue even if extension addition fails
-                }
-
-            } catch (agentErr) {
-                this.logger.error(`Failed to create agent with provider ${providerToUse}:`, agentErr);
-                throw agentErr; // Re-throw the error
+            // Ensure provider and model are set before creating agent
+            if (!this.gooseProvider || !this.gooseModel) {
+                this.logger.error('Goose provider or model is not set. Cannot create agent.');
+                // Optionally, notify the user or throw an error
+                this.eventEmitter.emit('error', 'Goose provider or model not configured in .goose.yaml');
+                return; // Prevent agent creation if config is missing
             }
 
+            this.logger.info(`Configuring agent with provider: ${this.gooseProvider}, model: ${this.gooseModel || 'default'}`);
+            await this.apiClient.createAgent(this.gooseProvider, this.gooseModel); // Use the correct API client method
         } catch (error) {
             this.logger.error('Error configuring agent:', error);
             this.eventEmitter.emit(ServerEvents.ERROR, error);
@@ -384,12 +351,14 @@ export class ServerManager {
                 workingDir = workspaceFolders[0].uri.fsPath;
             }
 
-            return await this.apiClient.streamChatResponse(
-                messages,
-                abortController,
-                undefined, // No session ID for now
-                workingDir
-            );
+            const params = {
+                prompt: messages,
+                abortController: abortController,
+                sessionId: undefined, // No session ID for now
+                workspaceDirectory: workingDir
+            };
+
+            return await this.apiClient.streamChatResponse(params);
         } catch (error) {
             this.logger.error('Error sending chat message:', error);
             this.eventEmitter.emit(ServerEvents.ERROR, error);
