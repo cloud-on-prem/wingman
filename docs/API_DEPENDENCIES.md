@@ -149,6 +149,20 @@ All API requests from the extension to the `goosed` server include the following
 - **Response**: JSON response with agent configuration details
 - **Usage**: Called by `ServerManager.configureAgent()` during server startup to set up the AI agent
 
+**POST /agent/update_provider**
+- **Purpose**: Update the agent's provider and model configuration.
+- **Request Headers**: `X-Secret-Key`, `Content-Type: application/json`
+- **Request Body**:
+  ```json
+  {
+    "provider": "string",
+    "model": "string (optional)",
+    "version": "string (optional)"
+  }
+  ```
+- **Response**: JSON response indicating success, or potentially an empty body on success (e.g., HTTP 200/204 with Content-Length: 0).
+- **Usage**: Called by `ServerManager.configureAgent()` during server startup after fetching versions and adding extensions.
+
 **POST /agent/prompt**
 - **Purpose**: Set or extend the base system prompt for the agent
 - **Request Headers**: `X-Secret-Key`, `Content-Type: application/json`
