@@ -93,6 +93,10 @@
       {
         "command": "goose.askAboutSelection",
         "title": "Ask Goose about this code"
+      },
+      {
+        "command": "goose.showLogs",
+        "title": "Goose: Show Extension Logs"
       }
     ],
     "menus": {

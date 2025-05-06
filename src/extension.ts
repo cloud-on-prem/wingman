@@ -857,6 +857,12 @@ export function activate(context: vscode.ExtensionContext) {
     });
     // --- End Configuration Change Listener ---
 
+	// Register command to show logs
+	const showLogsDisposable = vscode.commands.registerCommand('goose.showLogs', () => {
+		logger.info('Executing command: goose.showLogs');
+		logger.showOutputChannel();
+	});
+
 	// Add all disposables to the extension context's subscriptions
 	context.subscriptions.push(
 		viewRegistration,
@@ -868,7 +874,8 @@ export function activate(context: vscode.ExtensionContext) {
 		codeActionRegistration,
 		listSessionsDisposable,
 		themeChangeListener,
-		loggingConfigListener // Add the logging config listener
+		loggingConfigListener,
+		showLogsDisposable
 	);
 }
 

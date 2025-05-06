@@ -136,6 +136,13 @@ export class Logger implements ILogger {
     }
 
     /**
+     * Shows the VS Code output channel associated with this logger.
+     */
+    public showOutputChannel(): void {
+        this.outputChannel.show();
+    }
+
+    /**
      * Central log processing method.
      */
     private log(level: LogLevel, message: string | Error, _source?: string /* Unused */, ...args: any[]): void {
