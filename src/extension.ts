@@ -1,9 +1,9 @@
 // The module 'vscode' contains the VS Code extensibility API
- // Import the module and reference it with the alias vscode in your code below
- import * as vscode from 'vscode';
- import { ColorThemeKind } from 'vscode'; // Import ColorThemeKind
- import * as path from 'path';
- import * as fs from 'fs';
+// Import the module and reference it with the alias vscode in your code below
+import * as vscode from 'vscode';
+import { ColorThemeKind } from 'vscode'; // Import ColorThemeKind
+import * as path from 'path';
+import * as fs from 'fs';
 import { ServerManager, ServerStatus, ServerEvents } from './server/serverManager';
 import { ChatProcessor, ChatEvents } from './server/chat/chatProcessor';
 import { Message, getTextContent } from './types';
@@ -16,11 +16,11 @@ import { SessionManager, SessionEvents } from './server/chat/sessionManager';
 import { MessageType } from './common-types';
 // Import config reader function
 import { getConfigFilePath } from './utils/configReader';
-// Import logging utilities
-import { DefaultLogger, getLogger, LogLevel } from './utils/logging';
+// Import the new logger singleton
+import { logger } from './utils/logger';
 
 // Create logger for the extension
-const logger = getLogger('Extension');
+// const logger = getLogger('Extension'); // OLD LOGGER REMOVED
 
 // Define line limit constant for prepending code vs. adding reference chip
 const SELECTION_LINE_LIMIT_FOR_PREPEND = 100;
@@ -34,9 +34,12 @@ interface WebviewMessage {
 /**
  * Manages webview panels and sidebar view
  */
-class GooseViewProvider implements vscode.WebviewViewProvider {
+export class GooseViewProvider implements vscode.WebviewViewProvider {
 	public static readonly viewType = 'goose.chatView';
 	private _view?: vscode.WebviewView;
+	private isWebviewReady = false; // Added for readiness check
+	private messageQueue: WebviewMessage[] = []; // Added for message queueing
+	private lastSentStatus: ServerStatus | undefined = undefined; // Added for status change check
 	private readonly _extensionUri: vscode.Uri;
 	private readonly _serverManager: ServerManager;
 	private readonly _chatProcessor: ChatProcessor;
@@ -103,55 +106,73 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 			await this._onDidReceiveMessage(message);
 		});
 
+		// Handle webview disposal
+		webviewView.onDidDispose(() => {
+			logger.info('Webview view disposed. Cleaning up resources.');
+			this._view = undefined;
+			this.isWebviewReady = false;
+			this.messageQueue = []; // Clear any pending messages
+		});
+
 		// Set up event listeners for server status changes
-		this._serverManager.on(ServerEvents.STATUS_CHANGE, (status: ServerStatus) => {
-			this._sendMessageToWebview({
-				command: MessageType.SERVER_STATUS,
-				status
-			});
+		this._serverManager.on(ServerEvents.STATUS_CHANGE, (newStatus: ServerStatus) => {
+			if (newStatus !== this.lastSentStatus) {
+				this.postMessage({ // Use the new postMessage method
+					command: MessageType.SERVER_STATUS,
+					status: newStatus
+				});
+				this.lastSentStatus = newStatus;
+			}
 		});
 
 		// Set up event listeners for chat events
 		this._chatProcessor.on(ChatEvents.MESSAGE_RECEIVED, (message: Message) => {
-			this._sendMessageToWebview({
+			this.postMessage({ // Use the new postMessage method
 				command: MessageType.CHAT_RESPONSE,
 				message: message
 			});
 		});
 
 		this._chatProcessor.on(ChatEvents.ERROR, (error: Error) => {
-			this._sendMessageToWebview({
+			this.postMessage({ // Use the new postMessage method
 				command: MessageType.ERROR,
 				errorMessage: error.message
 			});
 		});
 
 		this._chatProcessor.on(ChatEvents.FINISH, (message: Message, reason: string) => {
-			this._sendMessageToWebview({
+			this.postMessage({ // Use the new postMessage method
 				command: MessageType.GENERATION_FINISHED,
 				message,
 				reason
 			});
 		});
 
-		// Send initial server status
-		this._sendMessageToWebview({
-			command: MessageType.SERVER_STATUS,
-			status: this._serverManager.getStatus()
-		});
+		// Log that the view has been resolved
+		logger.info(`Webview view resolved with context: ${context.state}`);
 
-		// Send initial theme
-		this._sendMessageToWebview({
-			command: MessageType.SET_THEME, // Use the new message type
+		// Send initial messages (will be queued if webview is not ready yet)
+		const initialStatus = this._serverManager.getStatus();
+		this.postMessage({ // Use the new postMessage method
+			command: MessageType.SERVER_STATUS,
+			status: initialStatus
+		});
+		this.lastSentStatus = initialStatus; // Set lastSentStatus based on initial post
+
+		this.postMessage({ // Use the new postMessage method
+			command: MessageType.SET_THEME,
 			theme: shikiTheme
 		});
-
-		// Log that the view has been resolved
-		console.log(`Webview view resolved with context: ${context.state}`);
 	}
 
 	private async _onDidReceiveMessage(message: any) {
 		switch (message.command) {
+			case MessageType.WEBVIEW_READY: // Handle webview ready message
+				logger.info('Webview is ready. Processing message queue.');
+				this.isWebviewReady = true;
+				this._processMessageQueue();
+				break;
+
 			case MessageType.HELLO:
 				break;
 
@@ -174,7 +195,7 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 						);
 					} catch (error) {
 						logger.error('Error sending message to chat processor:', error); // Use logger
-						this._sendMessageToWebview({
+						this.postMessage({
 							command: MessageType.ERROR,
 							errorMessage: error instanceof Error ? error.message : String(error)
 						});
@@ -191,9 +212,9 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 			case MessageType.REMOVE_CODE_REFERENCE:
 				// Handle removing a code reference from the UI
 				if (message.id) {
-					console.log('Removing code reference with ID:', message.id);
+					logger.debug('Removing code reference with ID:', message.id);
 					// Send back confirmation to the webview to update its state
-					this._sendMessageToWebview({
+					this.postMessage({
 						command: MessageType.REMOVE_CODE_REFERENCE,
 						id: message.id
 					});
@@ -203,13 +224,13 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 			case MessageType.GET_SESSIONS:
 				try {
 					const sessions = await this._sessionManager.fetchSessions();
-					this._sendMessageToWebview({
+					this.postMessage({
 						command: MessageType.SESSIONS_LIST,
 						sessions
 					});
 				} catch (error) {
-					console.error('Error fetching sessions:', error);
-					this._sendMessageToWebview({
+					logger.error('Error fetching sessions:', error);
+					this.postMessage({
 						command: MessageType.ERROR,
 						error: 'Failed to fetch sessions'
 					});
@@ -222,21 +243,21 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 					if (success) {
 						const session = this._sessionManager.getCurrentSession();
 						if (session) {
-							this._sendMessageToWebview({
+							this.postMessage({
 								command: MessageType.SESSION_LOADED,
 								sessionId: session.session_id,
 								messages: session.messages
 							});
 						}
 					} else {
-						this._sendMessageToWebview({
+						this.postMessage({
 							command: MessageType.ERROR,
 							error: 'Failed to switch session'
 						});
 					}
 				} catch (error) {
-					console.error('Error switching session:', error);
-					this._sendMessageToWebview({
+					logger.error('Error switching session:', error);
+					this.postMessage({
 						command: MessageType.ERROR,
 						error: 'Failed to switch session'
 					});
@@ -247,7 +268,7 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 				try {
 					const workspaceDirectory = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 					if (!workspaceDirectory) {
-						this._sendMessageToWebview({
+						this.postMessage({
 							command: MessageType.ERROR,
 							error: 'No workspace folder found'
 						});
@@ -263,27 +284,27 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 						// Get the session data to send to the webview
 						const session = this._sessionManager.getCurrentSession();
 						if (session) {
-							this._sendMessageToWebview({
+							this.postMessage({
 								command: MessageType.SESSION_LOADED,
 								sessionId: session.session_id,
 								messages: session.messages
 							});
 
 							// Also send the updated session list
-							this._sendMessageToWebview({
+							this.postMessage({
 								command: MessageType.SESSIONS_LIST,
 								sessions: this._sessionManager.getSessions()
 							});
 						}
 					} else {
-						this._sendMessageToWebview({
+						this.postMessage({
 							command: MessageType.ERROR,
 							error: 'Failed to create session'
 						});
 					}
 				} catch (error) {
-					console.error('Error creating session:', error);
-					this._sendMessageToWebview({
+					logger.error('Error creating session:', error);
+					this.postMessage({
 						command: MessageType.ERROR,
 						error: 'Failed to create session'
 					});
@@ -348,7 +369,7 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 
 								// Refresh sessions and notify webview
 								await this._sessionManager.fetchSessions();
-								this._sendMessageToWebview({
+								this.postMessage({
 									command: MessageType.SESSIONS_LIST,
 									sessions: this._sessionManager.getSessions()
 								});
@@ -358,7 +379,7 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 						}
 					}
 				} catch (error) {
-					console.error('Error renaming session:', error);
+					logger.error('Error renaming session:', error);
 					vscode.window.showErrorMessage('Failed to rename session');
 				}
 				break;
@@ -421,7 +442,7 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 
 								// Refresh sessions and notify webview
 								await this._sessionManager.fetchSessions();
-								this._sendMessageToWebview({
+								this.postMessage({
 									command: MessageType.SESSIONS_LIST,
 									sessions: this._sessionManager.getSessions()
 								});
@@ -431,33 +452,33 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 						}
 					}
 				} catch (error) {
-					console.error('Error deleting session:', error);
+					logger.error('Error deleting session:', error);
 					vscode.window.showErrorMessage('Failed to delete session');
 				}
 				break;
 
 			case MessageType.GET_SERVER_STATUS:
-				this._sendMessageToWebview({
+				this.postMessage({
 					command: MessageType.SERVER_STATUS,
 					status: this._serverManager.getStatus()
 				});
 				break;
 
 			case MessageType.RESTART_SERVER:
-				console.log('Restarting Goose server...');
+				logger.info('Restarting Goose server...');
 				// Restart the server
 				this._serverManager.restart().then(success => {
 					// Send updated status
-					this._sendMessageToWebview({
+					this.postMessage({
 						command: MessageType.SERVER_STATUS,
 						status: this._serverManager.getStatus()
 					});
 
 					if (success) {
-						console.log('Server restarted successfully');
+						logger.info('Server restarted successfully');
 					} else {
-						console.error('Failed to restart server');
-						this._sendMessageToWebview({
+						logger.error('Failed to restart server');
+						this.postMessage({
 							command: MessageType.ERROR,
 							errorMessage: 'Failed to restart the Goose server'
 						});
@@ -489,7 +510,7 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 				break;
 
 			default:
-				console.log(`Unhandled message: ${message.command}`);
+				logger.warn(`Unhandled message: ${message.command}`);
 		}
 	}
 
@@ -501,14 +522,14 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 			const fileName = document.fileName;
 			const languageId = document.languageId;
 
-			this._sendMessageToWebview({
+			this.postMessage({
 				command: MessageType.ACTIVE_EDITOR_CONTENT,
 				content,
 				fileName,
 				languageId,
 			});
 		} else {
-			this._sendMessageToWebview({
+			this.postMessage({
 				command: MessageType.ERROR,
 				errorMessage: 'No active editor found'
 			});
@@ -516,11 +537,59 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	/**
-	 * Sends a message to the webview
+	 * Processes the message queue, sending messages to the webview if it's ready.
 	 */
-	public _sendMessageToWebview(message: any) {
-		this.sendMessageToWebview(message);
+	private _processMessageQueue() {
+		logger.debug(`Processing message queue. ${this.messageQueue.length} messages pending.`);
+		while (this.messageQueue.length > 0) {
+			const message = this.messageQueue.shift();
+			if (message) {
+				logger.debug(`Dequeuing and sending message: ${message.command}`);
+				this._postMessageInternal(message); // Use internal method to send
+			}
+		}
 	}
+
+	/**
+	 * Internal method to actually send a message to the webview.
+	 * Should only be called when the webview is known to be available.
+	 */
+	private async _postMessageInternal(message: WebviewMessage): Promise<boolean> {
+		if (this._view && this._view.webview) {
+			try {
+				logger.debug(`Sending message to webview: ${message.command}`, message.command === 'aiMessageChunk' ? undefined : message);
+				const result = await this._view.webview.postMessage(message);
+				logger.debug(`Successfully posted message to webview: ${message.command}`);
+				if (message.command === 'aiMessage') {
+					logger.debug(`Sent full AI message with ID: ${message.message.id}`);
+				}
+				return true;
+			} catch (error) {
+				logger.error(`Error posting message ${message.command} to webview:`, error);
+				return false;
+			}
+		} else {
+			// This case should ideally be caught by the public postMessage queueing logic
+			logger.warn(`_postMessageInternal called but webview is not available. Message: ${message.command}`);
+			return false;
+		}
+	}
+
+	/**
+	 * Public method to send a message to the webview.
+	 * Queues messages if the webview is not ready.
+	 */
+	public postMessage(message: WebviewMessage) {
+		if (this._view && this.isWebviewReady) {
+			this._postMessageInternal(message);
+		} else if (this._view) {
+			logger.debug(`Webview not ready, queuing message: ${message.command}`);
+			this.messageQueue.push(message);
+		} else {
+			logger.warn(`Webview panel is undefined, cannot send or queue message: ${message.command}`);
+		}
+	}
+
 
 	private _getHtmlForWebview(webview: vscode.Webview) {
 		// Path to the built webview UI
@@ -554,7 +623,7 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 	public addCodeReference() {
 		const codeReference = this._codeReferenceManager.getCodeReferenceFromSelection();
 		if (codeReference) {
-			this._sendMessageToWebview({
+			this.postMessage({
 				command: MessageType.ADD_CODE_REFERENCE,
 				codeReference
 			});
@@ -572,12 +641,12 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 		const currentFile = this._workspaceContextProvider.getCurrentFileName();
 
 		if (diagnostics.length === 0) {
-			this._sendMessageToWebview({
+			this.postMessage({
 				command: MessageType.CHAT_MESSAGE,
 				text: `No issues found in ${currentFile || 'the current file'}.`
 			});
 		} else {
-			this._sendMessageToWebview({
+			this.postMessage({
 				command: MessageType.CHAT_MESSAGE,
 				text: `Please help me fix these issues in ${currentFile || 'my code'}:\n\n${formattedDiagnostics}`
 			});
@@ -587,245 +656,210 @@ class GooseViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	// Add event handler to confirm message was sent to webview
-	public sendMessageToWebview(message: any): void {
-		if (this._view && this._view.webview) {
-			try {
-				console.log(`Sending message to webview: ${message.command}`);
-				this._view.webview.postMessage(message);
-				console.log(`Successfully sent message to webview: ${message.command}`);
-				if (message.command === MessageType.AI_MESSAGE && message.message && message.message.id) {
-					console.log(`Sent AI message with ID: ${message.message.id}`);
-				}
-			} catch (error) {
-				console.error('Error sending message to webview:', error);
-			}
-		} else {
-			console.warn('Webview is not available, message not sent');
-		}
+	// This method seems redundant now with the public postMessage.
+	// Keeping it for now if it's used externally, but consider removing if not.
+	public async sendMessageToWebview(message: any): Promise<boolean> {
+		// For now, let's assume it should use the new public postMessage logic.
+		// However, postMessage is void, so this signature needs to change or the method needs a different purpose.
+		// For now, just calling postMessage and returning a placeholder.
+		// This needs review based on how sendMessageToWebview is used.
+		this.postMessage(message);
+		return Promise.resolve(true); // Placeholder, as postMessage is void.
 	}
 }
 
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
+// --- Exportable Handler Logic --- 
+// Added export
+export async function handleAskAboutSelectionCommand(
+	provider: GooseViewProvider,
+	codeReferenceManager: CodeReferenceManager
+) {
+	logger.info('Executing command: goose.askAboutSelection');
+
+	const editor = vscode.window.activeTextEditor;
+	if (!editor) {
+		logger.warn('No active text editor found.');
+		vscode.window.showInformationMessage('No active text editor.');
+		return;
+	}
+
+	const document = editor.document;
+	const selection = editor.selection;
+
+	let codeReferenceToSend: CodeReference | null = null;
+	let prepayloadToSend: any | null = null; // Payload for PREPARE_MESSAGE_WITH_CODE
+	let actionTaken = false; // Flag to track if we should focus
+
+	if (selection.isEmpty) {
+		// Task 1.2: No selection - use whole file
+		const fileContent = document.getText();
+		if (!fileContent || fileContent.trim() === '') { // Updated check
+			vscode.window.showInformationMessage('Active file is empty or contains only whitespace.');
+			return;
+		}
+		const fileName = path.basename(document.fileName);
+		const lineCount = document.lineCount;
+
+		if (lineCount >= SELECTION_LINE_LIMIT_FOR_PREPEND) {
+			// Use the new method for whole file referencing
+			codeReferenceToSend = codeReferenceManager.getCodeReferenceForEntireFile(document);
+			// getCodeReferenceForEntireFile already checks for empty/whitespace content
+			// and returns null, so no need for an additional check here if it's null.
+			// However, if it *is* null, we might want to inform the user, though it's covered by the initial check.
+			if (codeReferenceToSend) {
+				logger.info(`File >= ${SELECTION_LINE_LIMIT_FOR_PREPEND} lines, creating code reference chip for whole file.`);
+				actionTaken = true;
+			} else {
+				// This case should theoretically be caught by the initial fileContent.trim() check.
+				// If it still happens, it's an unexpected state or a bug in getCodeReferenceForEntireFile.
+				logger.warn('getCodeReferenceForEntireFile returned null for a non-empty, non-whitespace file.');
+				vscode.window.showInformationMessage('Could not create a reference for the file.');
+				return;
+			}
+		} else {
+			// Prepending whole file (already checked for empty/whitespace)
+			prepayloadToSend = {
+				content: fileContent,
+				fileName: fileName,
+				languageId: document.languageId,
+				startLine: 1,
+				endLine: lineCount > 0 ? lineCount : 1
+			};
+			logger.info(`File < ${SELECTION_LINE_LIMIT_FOR_PREPEND} lines, preparing message with whole file code.`);
+			actionTaken = true;
+		}
+	} else {
+		// User has made a selection
+		const selectedLines = selection.end.line - selection.start.line + 1;
+
+		if (selectedLines >= SELECTION_LINE_LIMIT_FOR_PREPEND) {
+			// Task 1.3: >= 100 lines - use manager to create code reference chip
+			codeReferenceToSend = codeReferenceManager.getCodeReferenceFromSelection();
+			if (!codeReferenceToSend) {
+				// This means selection was empty or whitespace only
+				vscode.window.showInformationMessage('Selected text is empty or contains only whitespace.');
+				return;
+			}
+			logger.info(`Selection >= ${SELECTION_LINE_LIMIT_FOR_PREPEND} lines, creating code reference chip.`);
+			actionTaken = true;
+		} else {
+			// Task 1.4: < 100 lines - prepare message with code
+			const selectedText = document.getText(selection);
+			if (selectedText.trim() === '') { // Added check
+				vscode.window.showInformationMessage('Selected text is empty or contains only whitespace.');
+				return;
+			}
+			prepayloadToSend = {
+				content: selectedText,
+				fileName: path.basename(document.fileName),
+				languageId: document.languageId,
+				// Add line numbers to the payload
+				startLine: selection.start.line + 1, // VS Code lines are 0-based, display is 1-based
+				endLine: selection.end.line + 1
+			};
+			logger.info(`Selection < ${SELECTION_LINE_LIMIT_FOR_PREPEND} lines (${prepayloadToSend.startLine}-${prepayloadToSend.endLine}), preparing message with code.`);
+			actionTaken = true;
+		}
+	}
+
+	// Send the appropriate message to the webview
+	if (codeReferenceToSend) {
+		provider.postMessage({ // Use the passed provider
+			command: MessageType.ADD_CODE_REFERENCE,
+			codeReference: codeReferenceToSend
+		});
+	} else if (prepayloadToSend) {
+		provider.postMessage({ // Use the passed provider
+			command: MessageType.PREPARE_MESSAGE_WITH_CODE,
+			payload: prepayloadToSend
+		});
+	}
+
+	// Focus the chat view and input only if an action was taken
+	if (actionTaken) {
+		vscode.commands.executeCommand('goose.chatView.focus');
+		provider.postMessage({ // Use the passed provider
+			command: MessageType.FOCUS_CHAT_INPUT
+		});
+	}
+}
+// --- End Exportable Handler Logic ---
+
 export function activate(context: vscode.ExtensionContext) {
-	console.log('Activating Goose extension');
 
-	// Initialize logger with configuration
-	DefaultLogger.initializeFromConfig(context);
-	logger.info('Goose extension activated with log level: ' + LogLevel[DefaultLogger.getGlobalLevel()]);
+	// Initialize logger first
+	logger.info('Goose extension activating...');
 
-	// Create server manager with dependencies (using defaults)
-	const serverManager = new ServerManager(context, {
-		// All dependencies use defaults, but we show the explicit structure
-		// which allows for easier mocking in tests or future customization
-	});
+	// Get config path
+	const configFilePath = getConfigFilePath();
+	logger.info(`Using config file at: ${configFilePath}`);
 
-	// Create chat processor
+	// Create the ServerManager instance
+	const serverManager = new ServerManager(context);
+
+	// Now create instances that depend on serverManager (assuming dependencies)
+	const sessionManager = new SessionManager(serverManager);
 	const chatProcessor = new ChatProcessor(serverManager);
 
-	// Create session manager
-	const sessionManager = new SessionManager(serverManager);
-
-	// Connect chat processor to session manager
-	chatProcessor.setSessionManager(sessionManager);
-
-	// Create workspace context provider
-	const workspaceContextProvider = WorkspaceContextProvider.getInstance();
-
-	// Create the provider before starting the server
-	const provider = new GooseViewProvider(context.extensionUri, serverManager, chatProcessor, sessionManager);
-
-	// Register the Goose View Provider
-	const viewRegistration = vscode.window.registerWebviewViewProvider(
-		GooseViewProvider.viewType,
-		provider,
-		{
-			webviewOptions: { retainContextWhenHidden: true }
-		}
+	// Create the provider instance, passing managers
+	const provider = new GooseViewProvider(
+		context.extensionUri,
+		serverManager, // Pass serverManager
+		chatProcessor, // Pass chatProcessor
+		sessionManager // Pass sessionManager
 	);
 
-	// Listen for server status changes and update the UI
-	serverManager.on('statusChanged', (status: string) => {
-		console.log(`Extension received server status change: ${status}`);
-		if (provider) {
-			provider.sendMessageToWebview({
-				command: MessageType.SERVER_STATUS,
-				status: status
-			});
-		}
-	});
+	// Get the code reference manager instance
+	const codeReferenceManager = CodeReferenceManager.getInstance();
 
-	// Listen for server exit events
-	serverManager.on('serverExit', (code: number | null) => {
-		console.log(`Extension received server exit with code: ${code}`);
-		if (provider) {
-			provider.sendMessageToWebview({
-				command: MessageType.SERVER_EXIT,
-				code: code
-			});
-		}
-	});
+	// Register the view provider
+	const viewRegistration = vscode.window.registerWebviewViewProvider(GooseViewProvider.viewType, provider);
 
-	// Automatically start the server when the extension activates
-	serverManager.start().then(success => {
-		if (success) {
-			console.log('Goose server started automatically on extension activation');
-		} else {
-			console.error('Failed to automatically start the Goose server');
-		}
-	}).catch(error => {
-		console.error('Error starting Goose server:', error);
-	});
-
-	// Register code action provider
-	const codeActionProvider = new GooseCodeActionProvider();
-	const supportedLanguages = [
-		'javascript', 'typescript', 'python', 'java', 'csharp',
-		'cpp', 'c', 'rust', 'go', 'php', 'ruby', 'swift', 'kotlin',
-		'html', 'css', 'markdown', 'json', 'yaml', 'plaintext'
-	];
-
-	const codeActionRegistration = vscode.languages.registerCodeActionsProvider(
-		supportedLanguages.map(lang => ({ language: lang })),
-		codeActionProvider
-	);
-
-	// The command has been defined in the package.json file
+	// Register "Hello World" command
 	const helloDisposable = vscode.commands.registerCommand('goose.helloWorld', () => {
-		// The code you place here will be executed every time your command is executed
-		// Display a message box to the user
 		vscode.window.showInformationMessage('Hello World from Goose!');
 	});
 
-	// Command to focus the Goose view
-	const startDisposable = vscode.commands.registerCommand('goose.start', () => {
-		vscode.commands.executeCommand('goose.chatView.focus');
+	// Register Start/Stop commands for the server
+	const startServerDisposable = vscode.commands.registerCommand('goose.startServer', () => {
+		serverManager.start();
 	});
-
-	// Command to manually start the server
-	const startServerDisposable = vscode.commands.registerCommand('goose.startServer', async () => {
-		try {
-			vscode.window.showInformationMessage('Starting Goose server...');
-			await serverManager.start();
-			vscode.window.showInformationMessage('Goose server started successfully');
-		} catch (error) {
-			vscode.window.showErrorMessage(`Failed to start Goose server: ${error}`);
-		}
-	});
-
-	// Command to manually stop the server
 	const stopServerDisposable = vscode.commands.registerCommand('goose.stopServer', () => {
-		try {
-			serverManager.stop();
-			vscode.window.showInformationMessage('Goose server stopped');
-		} catch (error) {
-			vscode.window.showErrorMessage(`Failed to stop Goose server: ${error}`);
-		}
+		serverManager.stop();
 	});
 
-	// Command to ask Goose about selected code
-	const askAboutSelectionDisposable = vscode.commands.registerCommand('goose.askAboutSelection', () => {
-		const editor = vscode.window.activeTextEditor;
-		if (!editor) {
-			vscode.window.showInformationMessage('No active text editor found.');
-			return;
-		}
-
-		const document = editor.document;
-		const selection = editor.selection;
-		const codeReferenceManager = CodeReferenceManager.getInstance();
-
-		let codeReferenceToSend: CodeReference | null = null;
-		let prepayloadToSend: any = null;
-		let actionTaken = false; // Flag to track if we should focus
-
-		if (selection.isEmpty) {
-			// Task 1.2: No selection - use whole file
-			const fileContent = document.getText();
-			if (!fileContent) {
-				vscode.window.showInformationMessage('Active file is empty.');
-				return;
-			}
-			const fileName = path.basename(document.fileName);
-			const lineCount = document.lineCount;
-			codeReferenceToSend = {
-				// Generate ID similar to manager's pattern
-				id: `${fileName}-1-${lineCount}-${Date.now()}`,
-				filePath: document.uri.fsPath,
-				fileName: fileName,
-				startLine: 1, // 1-based
-				endLine: lineCount, // 1-based
-				selectedText: fileContent, // Use correct property name
-				languageId: document.languageId
-			};
-			logger.info(`No selection, creating reference for whole file: ${codeReferenceToSend.fileName}`);
-			actionTaken = true;
-
-		} else {
-			// Selection exists
-			const selectedLines = selection.end.line - selection.start.line + 1;
-
-			if (selectedLines >= SELECTION_LINE_LIMIT_FOR_PREPEND) {
-				// Task 1.3: >= 100 lines - use manager to create code reference chip
-				codeReferenceToSend = codeReferenceManager.getCodeReferenceFromSelection();
-				if (codeReferenceToSend) {
-					logger.info(`Selection >= ${SELECTION_LINE_LIMIT_FOR_PREPEND} lines, creating code reference chip.`);
-					actionTaken = true;
-				} else {
-					// Should not happen if selection is not empty, but good practice
-					logger.warn('getCodeReferenceFromSelection returned null despite non-empty selection.');
-				}
-			} else {
-				// Task 1.4: < 100 lines - prepare message with code
-				const selectedText = document.getText(selection);
-				prepayloadToSend = {
-					content: selectedText,
-					fileName: path.basename(document.fileName),
-					languageId: document.languageId,
-					// Add line numbers to the payload
-					startLine: selection.start.line + 1, // VS Code lines are 0-based, display is 1-based
-					endLine: selection.end.line + 1
-				};
-				logger.info(`Selection < ${SELECTION_LINE_LIMIT_FOR_PREPEND} lines (${prepayloadToSend.startLine}-${prepayloadToSend.endLine}), preparing message with code.`);
-				actionTaken = true;
-			}
-		}
-
-		// Send the appropriate message to the webview
-		if (codeReferenceToSend) {
-			provider.sendMessageToWebview({
-				command: MessageType.ADD_CODE_REFERENCE,
-				codeReference: codeReferenceToSend
-			});
-		} else if (prepayloadToSend) {
-			provider.sendMessageToWebview({
-				command: MessageType.PREPARE_MESSAGE_WITH_CODE,
-				payload: prepayloadToSend
-			});
-		}
-
-		// Focus the chat view and input only if an action was taken
-		if (actionTaken) {
-			vscode.commands.executeCommand('goose.chatView.focus');
-			provider.sendMessageToWebview({
-				command: MessageType.FOCUS_CHAT_INPUT
-			});
-		}
+	// Register command to open settings
+	const openSettingsDisposable = vscode.commands.registerCommand('goose.openSettings', () => {
+		vscode.commands.executeCommand('workbench.action.openSettings', '@ext:prempillai.wingman-goose');
 	});
+
+	// Register command to ask about selected code
+	// --->>> UPDATED: Use the exported handler
+	const askAboutSelectionDisposable = vscode.commands.registerCommand('goose.askAboutSelection',
+		() => handleAskAboutSelectionCommand(provider, codeReferenceManager) // Pass dependencies
+	);
+
+	// Register Code Action provider
+	const codeActionRegistration = vscode.languages.registerCodeActionsProvider(
+		{ scheme: 'file' }, // Apply to all file types
+		new GooseCodeActionProvider()
+	);
 
 	// Register session management commands
 	const listSessionsDisposable = vscode.commands.registerCommand('goose.listSessions', async () => {
 		try {
+			logger.info('Executing command: goose.listSessions');
 			const sessions = await sessionManager.fetchSessions();
 			if (provider) {
-				provider.sendMessageToWebview({
+				// Use the new postMessage method
+				provider.postMessage({
 					command: MessageType.SESSIONS_LIST,
 					sessions
 				});
 			}
 		} catch (error) {
-			console.error('Error listing sessions:', error);
-			vscode.window.showErrorMessage('Failed to list sessions');
+			logger.error('Error listing sessions:', error);
+			vscode.window.showErrorMessage(`Failed to list sessions: ${error}`);
 		}
 	});
 
@@ -833,25 +867,57 @@ export function activate(context: vscode.ExtensionContext) {
 	const themeChangeListener = vscode.window.onDidChangeActiveColorTheme(theme => {
 		const newShikiTheme = provider.getShikiTheme(theme.kind);
 		logger.info(`VS Code theme changed. New kind: ${ColorThemeKind[theme.kind]}, Mapped shiki theme: ${newShikiTheme}`);
-		provider.sendMessageToWebview({
+		// Use the new postMessage method
+		provider.postMessage({
 			command: MessageType.SET_THEME,
 			theme: newShikiTheme
 		});
 	});
 	// --- End Theme Change Listener ---
 
+	// --- Add Configuration Change Listener for Logging ---
+	const loggingConfigListener = vscode.workspace.onDidChangeConfiguration(event => {
+		if (event.affectsConfiguration('goose.logging.enabled') || event.affectsConfiguration('goose.logging.level')) {
+			logger.info('Logging configuration changed, updating logger...');
+			logger.updateConfiguration();
+		}
+	});
+	// --- End Configuration Change Listener ---
+
+	// Register command to show logs
+	const showLogsDisposable = vscode.commands.registerCommand('goose.showLogs', () => {
+		logger.info('Executing command: goose.showLogs');
+		logger.showOutputChannel();
+	});
+
 	// Add all disposables to the extension context's subscriptions
 	context.subscriptions.push(
 		viewRegistration,
 		helloDisposable,
-		startDisposable,
 		startServerDisposable,
 		stopServerDisposable,
+		openSettingsDisposable, // Add open settings disposable
 		askAboutSelectionDisposable,
 		codeActionRegistration,
 		listSessionsDisposable,
-		themeChangeListener // Add the new listener here
+		themeChangeListener,
+		loggingConfigListener,
+		showLogsDisposable
 	);
+
+	logger.info('[Activate] About to call serverManager.start()'); // New log
+	// Start the server (if not already running and enabled)
+	serverManager.start().then(started => {
+		if (started) {
+			logger.info('[Activate] ServerManager.start() promise resolved true (started successfully).');
+		} else {
+			logger.info('[Activate] ServerManager.start() promise resolved false (did not start, e.g., config error, already running).');
+		}
+	}).catch(error => {
+		logger.error('[Activate] ServerManager.start() promise rejected with error:', error);
+	});
+
+	logger.info('Goose extension activated.');
 }
 
 // This method is called when your extension is deactivated

@@ -40,6 +40,11 @@ export class CodeReferenceManager {
         }
 
         const selectedText = document.getText(selection);
+        // If the selected text is only whitespace, treat it as empty
+        if (selectedText.trim() === '') {
+            return null;
+        }
+
         const filePath = document.uri.fsPath;
         const fileName = path.basename(filePath);
         const startLine = selection.start.line + 1; // 1-based line numbers
@@ -53,6 +58,36 @@ export class CodeReferenceManager {
             startLine,
             endLine,
             selectedText,
+            languageId
+        };
+    }
+
+    /**
+     * Gets a code reference for the entire content of a document.
+     */
+    public getCodeReferenceForEntireFile(document: vscode.TextDocument): CodeReference | null {
+        if (!document) {
+            return null;
+        }
+
+        const fileContent = document.getText();
+        if (fileContent.trim() === '') {
+            return null; // Do not create reference for empty or whitespace-only file
+        }
+
+        const filePath = document.uri.fsPath;
+        const fileName = path.basename(filePath);
+        const startLine = 1; // For the whole file, starts at line 1
+        const endLine = document.lineCount > 0 ? document.lineCount : 1; // Ends at the last line
+        const languageId = document.languageId;
+
+        return {
+            id: `${fileName}-wholefile-${Date.now()}`,
+            filePath,
+            fileName,
+            startLine,
+            endLine,
+            selectedText: fileContent, // The entire file content
             languageId
         };
     }

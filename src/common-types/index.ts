@@ -30,7 +30,8 @@ export enum MessageType {
     FOCUS_CHAT_INPUT = 'focusChatInput',
     PREPARE_MESSAGE_WITH_CODE = 'prepareMessageWithCode', // Added for <100 line selections
     OPEN_SETTINGS_FILE = 'openSettingsFile', // Added for opening settings
-    SET_THEME = 'setTheme' // Added for Shiki theme synchronization
+    SET_THEME = 'setTheme', // Added for Shiki theme synchronization
+    WEBVIEW_READY = 'webviewReady' // Added for webview readiness check
 }
 
 // Types copied from src/types/messages.ts to be shared

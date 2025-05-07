@@ -1,11 +1,13 @@
 import * as assert from 'assert';
+import * as vscode from 'vscode';
 import * as sinon from 'sinon';
+import { describe, it, before, after, beforeEach } from 'mocha';
 import * as path from 'path';
 import { setupTestEnvironment } from '../testUtils';
 import { readGooseConfig, FileSystem, OS } from '../../utils/configReader';
-import * as logging from '../../utils/logging';
+import { logger } from '../../utils/logger';
 
-suite('ConfigReader Tests', () => {
+describe('ConfigReader Tests', () => {
     let testEnv: ReturnType<typeof setupTestEnvironment>;
 
     // Mock implementations
@@ -19,28 +21,25 @@ suite('ConfigReader Tests', () => {
         platform: () => 'linux'
     };
 
-    setup(() => {
+    before(() => {
         testEnv = setupTestEnvironment();
-        
-        // Create a proper Logger that implements the interface
-        const mockLogger: logging.Logger = {
-            debug: () => {},
-            info: () => {},
-            warn: () => {},
-            error: () => {},
-            setLevel: () => {},
-            getLevel: () => logging.LogLevel.INFO
-        };
-        
-        // Stub the logger
-        testEnv.sandbox.stub(logging, 'getLogger').returns(mockLogger);
+        // Stub the logger methods once before all tests in this suite
+        testEnv.sandbox.stub(logger, 'debug');
+        testEnv.sandbox.stub(logger, 'info');
+        testEnv.sandbox.stub(logger, 'warn');
+        testEnv.sandbox.stub(logger, 'error');
     });
 
-    teardown(() => {
+    after(() => {
         testEnv.cleanup();
     });
 
-    test('should parse valid config file and extract provider and model', () => {
+    beforeEach(() => {
+        // Reset history or perform other per-test setup if needed
+        // Logger stubs are already set up in the 'before' hook
+    });
+
+    it('should parse valid config file and extract provider and model', () => {
         // Call the function with our mocks
         const result = readGooseConfig(mockFs, mockOs);
         
@@ -49,7 +48,7 @@ suite('ConfigReader Tests', () => {
         assert.strictEqual(result.model, 'claude-3-7-sonnet');
     });
 
-    test('should handle missing config file', () => {
+    it('should handle missing config file', () => {
         // Create mock with non-existent file
         const mockFsMissing: FileSystem = {
             existsSync: () => false,
@@ -64,7 +63,7 @@ suite('ConfigReader Tests', () => {
         assert.strictEqual(result.model, null);
     });
 
-    test('should handle invalid YAML content', () => {
+    it('should handle invalid YAML content', () => {
         // Create mock with invalid YAML
         const mockFsInvalid: FileSystem = {
             existsSync: () => true,
@@ -79,7 +78,7 @@ suite('ConfigReader Tests', () => {
         assert.strictEqual(result.model, null);
     });
 
-    test('should handle file read errors', () => {
+    it('should handle file read errors', () => {
         // Create mock that throws an error
         const mockFsError: FileSystem = {
             existsSync: () => true,
@@ -94,7 +93,7 @@ suite('ConfigReader Tests', () => {
         assert.strictEqual(result.model, null);
     });
 
-    test('should handle missing GOOSE_PROVIDER key', () => {
+    it('should handle missing GOOSE_PROVIDER key', () => {
         // Create mock with missing provider
         const mockFsNoProvider: FileSystem = {
             existsSync: () => true,
@@ -109,7 +108,7 @@ suite('ConfigReader Tests', () => {
         assert.strictEqual(result.model, 'claude-3-7-sonnet');
     });
 
-    test('should handle missing GOOSE_MODEL key', () => {
+    it('should handle missing GOOSE_MODEL key', () => {
         // Create mock with missing model
         const mockFsNoModel: FileSystem = {
             existsSync: () => true,
@@ -124,7 +123,7 @@ suite('ConfigReader Tests', () => {
         assert.strictEqual(result.model, null);
     });
 
-    test('should handle non-string values for keys', () => {
+    it('should handle non-string values for keys', () => {
         // Create mock with invalid types
         const mockFsInvalidTypes: FileSystem = {
             existsSync: () => true,
@@ -139,7 +138,7 @@ suite('ConfigReader Tests', () => {
         assert.strictEqual(result.model, null);
     });
 
-    test('should handle empty YAML file', () => {
+    it('should handle empty YAML file', () => {
         // Create mock with empty file
         const mockFsEmpty: FileSystem = {
             existsSync: () => true,
@@ -154,7 +153,7 @@ suite('ConfigReader Tests', () => {
         assert.strictEqual(result.model, null);
     });
 
-    test('should use correct path for Windows', () => {
+    it('should use correct path for Windows', () => {
         // Spy on the mock implementation
         const readFileSpy = sinon.spy();
         

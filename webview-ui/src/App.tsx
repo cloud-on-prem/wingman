@@ -74,11 +74,12 @@ const App: React.FC = () => {
 
     // Handler for sending a chat message
     const handleSendMessage = useCallback(() => {
-        if (!inputMessage.trim() && codeReferences.length === 0) {
+        const trimmedMessage = inputMessage.trim();
+        if (!trimmedMessage && codeReferences.length === 0) {
             return;
         }
 
-        sendChatMessage(inputMessage, codeReferences, currentSessionId);
+        sendChatMessage(trimmedMessage, codeReferences, currentSessionId);
         setInputMessage('');
     }, [inputMessage, codeReferences, currentSessionId, sendChatMessage]);
 
@@ -142,6 +143,13 @@ const App: React.FC = () => {
             window.removeEventListener('message', handleMessage);
         };
     }, [handleFocusInput]);
+
+    // Send webview ready message to extension host on load
+    useEffect(() => {
+        const vscode = getVSCodeAPI();
+        vscode.postMessage({ command: MessageType.WEBVIEW_READY });
+        console.log('App: Sent WEBVIEW_READY to extension host.');
+    }, []);
 
     return (
         <div className="container">

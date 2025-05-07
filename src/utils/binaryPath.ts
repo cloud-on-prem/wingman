@@ -3,6 +3,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as vscode from 'vscode';
 import { ExtensionContext } from 'vscode';
+import { logger as singletonLogger } from './logger';
+
+const logger = singletonLogger.createSource('BinaryPath');
 
 /**
  * Get the path to the Goose binary by looking for the installed Goose Desktop application.
@@ -88,34 +91,35 @@ export function getBinaryPath(_context: ExtensionContext, binaryName: string): s
     }
     // --- End Development Override ---
 
-    console.info('[Goose Ext] Checking for binary:', executableName, 'in paths:', possiblePaths);
+    logger.info('Checking for binary:', executableName, 'in paths:', possiblePaths);
 
     // Try each path and return the first one that exists
     for (const binPath of possiblePaths) {
         try {
             if (fs.existsSync(binPath)) {
-                console.info(`[Goose Ext] Found binary at: ${binPath}`);
+                logger.info(`Found potential binary at: ${binPath}`);
                 // Ensure the file is executable (especially on Unix-like systems)
                 if (platform !== 'win32') {
                     try {
                         fs.accessSync(binPath, fs.constants.X_OK);
                     } catch (execError) {
-                        console.warn(`[Goose Ext] Binary found at ${binPath} but is not executable. Attempting to chmod.`);
+                        logger.warn(`Binary found at ${binPath} but is not executable. Attempting to chmod.`);
                         try {
                             fs.chmodSync(binPath, 0o755); // Set executable permissions
-                            console.info(`[Goose Ext] Successfully set executable permission for ${binPath}`);
+                            logger.info(`Successfully set executable permission for ${binPath}`);
                         } catch (chmodError) {
-                            console.error(`[Goose Ext] Failed to set executable permission for ${binPath}:`, chmodError);
+                            logger.error(`Failed to set executable permission for ${binPath}:`, chmodError);
                             // Continue checking other paths, maybe another one works
                             continue;
                         }
                     }
                 }
+                logger.info(`Binary confirmed executable: ${binPath}`);
                 return binPath;
             }
         } catch (error) {
             // Log errors during checks but continue trying other paths
-            console.error(`[Goose Ext] Error checking path ${binPath}:`, error);
+            logger.error(`Error checking path ${binPath}:`, error);
         }
     }
 
@@ -143,6 +147,6 @@ export function getBinaryPath(_context: ExtensionContext, binaryName: string): s
         }
     });
 
-    console.error(`[Goose Ext] ${errorMessage} Checked paths: ${possiblePaths.join(', ')}`);
+    logger.error(`Could not find binary. Checked paths: ${possiblePaths.join(', ')}`);
     throw new Error(`${errorMessage} ${installMessage}`);
-} 
+}

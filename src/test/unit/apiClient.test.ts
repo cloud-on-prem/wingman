@@ -1,6 +1,7 @@
 import * as assert from 'assert'; // Use Node's built-in assert
 import { ApiClient, ApiClientConfig } from '../../server/apiClient';
 import sinon from 'sinon';
+import { Logger } from '../../utils/logger'; // Import Logger class for stubbing
 
 // Mock the global fetch function
 const mockFetch = sinon.stub();
@@ -9,16 +10,13 @@ global.fetch = mockFetch as any;
 suite('ApiClient Tests', () => { // Changed describe to suite
     let apiClient: ApiClient;
     let config: ApiClientConfig;
-    const mockLogger = {
-        info: sinon.stub(),
-        error: sinon.stub(),
-    };
+    let mockLogger: sinon.SinonStubbedInstance<Logger>; // Stub the Logger class
 
     setup(() => { // Changed beforeEach to setup
         // Reset stubs before each test
         mockFetch.reset();
-        mockLogger.info.resetHistory();
-        mockLogger.error.resetHistory();
+        mockLogger = sinon.createStubInstance(Logger); // Create a stub instance of the Logger class
+        mockLogger.createSource.returnsThis(); // Make createSource return the stub for chaining
 
         config = {
             baseUrl: 'http://localhost:1234',
@@ -69,6 +67,47 @@ suite('ApiClient Tests', () => { // Changed describe to suite
             assert.ok(mockLogger.info.calledWith(`Agent prompt set successfully, response: ${JSON.stringify(mockSuccessResponse)}`), 'Info log for success missing');
         });
 
+        test('should trim prompt with leading/trailing whitespace', async () => {
+            const inputPrompt = '  Trimmed Test Prompt  ';
+            const expectedTrimmedPrompt = 'Trimmed Test Prompt';
+            const expectedBody = JSON.stringify({ extension: expectedTrimmedPrompt });
+            const mockSuccessResponse = { success: true };
+
+            mockFetch.resolves({
+                ok: true, status: 200, statusText: 'OK',
+                json: sinon.stub().resolves(mockSuccessResponse),
+                text: sinon.stub().resolves(JSON.stringify(mockSuccessResponse)),
+                headers: new Headers(),
+            });
+
+            await apiClient.setAgentPrompt(inputPrompt);
+
+            assert.ok(mockFetch.calledOnce, 'fetch should be called once');
+            const [, options] = mockFetch.getCall(0).args;
+            assert.strictEqual(options.body, expectedBody, 'Body should contain trimmed prompt');
+            assert.ok(mockLogger.info.calledWith(`Setting agent system prompt...`), 'Initial info log missing');
+        });
+
+        test('should skip API call for an empty string prompt', async () => {
+            const inputPrompt = '';
+            const result = await apiClient.setAgentPrompt(inputPrompt);
+
+            assert.strictEqual(mockFetch.notCalled, true, 'fetch should not be called for empty prompt');
+            assert.strictEqual(result, undefined, 'Should return undefined for skipped call');
+            assert.ok(mockLogger.info.calledWith(`Setting agent system prompt...`), 'Initial info log missing');
+            assert.ok(mockLogger.info.calledWith('Trimmed system prompt is empty. Skipping API call to /agent/prompt.'), 'Skip log missing');
+        });
+
+        test('should skip API call for a whitespace-only prompt', async () => {
+            const inputPrompt = '   '; // Whitespace only
+            const result = await apiClient.setAgentPrompt(inputPrompt);
+
+            assert.strictEqual(mockFetch.notCalled, true, 'fetch should not be called for whitespace-only prompt');
+            assert.strictEqual(result, undefined, 'Should return undefined for skipped call');
+            assert.ok(mockLogger.info.calledWith(`Setting agent system prompt...`), 'Initial info log missing');
+            assert.ok(mockLogger.info.calledWith('Trimmed system prompt is empty. Skipping API call to /agent/prompt.'), 'Skip log missing for whitespace');
+        });
+
         test('should throw an error if the API request fails', async () => { // Changed it to test
             // Define expectedHeaders here, inside the test block
             const expectedHeaders = {
@@ -108,7 +147,6 @@ suite('ApiClient Tests', () => { // Changed describe to suite
                 },
                 'Expected setAgentPrompt to throw an error'
             );
-            // Removed the extra closing brace here
         });
     });
 

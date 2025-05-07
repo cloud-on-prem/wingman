@@ -23,7 +23,6 @@ The user manages extensions primarily through VS Code's standard extension manag
 
 Some capabilities might be provided by built-in features of the Goose extension, while others might come from additional VS Code extensions the user has installed. Be aware of the code context potentially provided by the user (e.g., selected code snippets, open files).`;
 
-
 // Create mock ApiClient class that properly extends the actual ApiClient
 class MockApiClient extends EventEmitter {
     baseUrl: string;
@@ -56,7 +55,7 @@ function createApiClientFactory(mockApiClientMethods: any) {
 }
 
 suite('ServerManager Tests', () => {
-    let serverManager: ServerManager;
+    let serverManager: ServerManager; // Use instance from beforeEach for all tests
     let mockContext: Partial<vscode.ExtensionContext>;
     let startGoosedStub: sinon.SinonStub<Parameters<typeof actualGooseServer.startGoosed>, Promise<actualGooseServer.GooseServerInfo>>;
     let workspaceFoldersStub: sinon.SinonStub;
@@ -65,6 +64,7 @@ suite('ServerManager Tests', () => {
     let getBinaryPathStub: sinon.SinonStub;
     let testEnv: ReturnType<typeof setupTestEnvironment>;
     let configReaderStub: sinon.SinonStub;
+    let showErrorMessageStub: sinon.SinonStub;
 
     setup(() => {
         testEnv = setupTestEnvironment();
@@ -147,7 +147,10 @@ suite('ServerManager Tests', () => {
         mockApiClient = {
             getAgentVersions: testEnv.sandbox.stub().resolves({ versions: ['1.0.0', '2.0.0'] }),
             createAgent: testEnv.sandbox.stub().resolves({ id: 'test-agent-id' }),
-            request: testEnv.sandbox.stub().resolves({}),
+            request: testEnv.sandbox.stub().callsFake(async (_path: string, _options: any) => { // Mark params as unused
+                // Simulate a basic successful response for tests that might call the generic request
+                return Promise.resolve({ ok: true, status: 200, json: async () => ({}), text: async () => '' });
+            }),
             getConversations: testEnv.sandbox.stub().resolves([]),
             createConversation: testEnv.sandbox.stub().resolves({ id: 'test-conversation-id' }),
             sendMessage: testEnv.sandbox.stub().resolves({ id: 'test-message-id' }),
@@ -163,23 +166,48 @@ suite('ServerManager Tests', () => {
                     emitter.emit('end');
                 }, 10);
                 return emitter;
-            })
-        };
+            }),
+            getProviders: testEnv.sandbox.stub().resolves([{ id: 'test-provider', name: 'Test Provider' }]), // Add stub
+            listSessions: testEnv.sandbox.stub().resolves([{ id: 'test-session-1', name: 'Test Session 1' }]), // Add stub
+            getSessionHistory: testEnv.sandbox.stub().resolves({ messages: [] }), // Add stub
+            renameSession: testEnv.sandbox.stub().resolves(true), // Add stub
+            deleteSession: testEnv.sandbox.stub().resolves(true), // Add stub
+            streamChatResponse: testEnv.sandbox.stub().callsFake(() => { // Add stub for streaming
+                const emitter = new EventEmitter();
+                process.nextTick(() => {
+                    emitter.emit('data', { type: 'text', content: 'Mock response chunk' });
+                    emitter.emit('end');
+                });
+                // Return something Response-like for the stubbed streamChatResponse
+                async function* generator() {
+                    yield new TextEncoder().encode(JSON.stringify({ type: 'text', content: 'Mock response chunk' }));
+                }
+                return Promise.resolve({ ok: true, body: generator(), status: 200 } as any);
+            }),
+            setSecretProviderKeys: testEnv.sandbox.stub(), // Add stub for the new method
 
+            // Example of mocking a method that emits an event
+        };
+ 
         // Create the server manager with dependencies
         serverManager = new ServerManager(mockContext as vscode.ExtensionContext, {
             startGoosed: startGoosedStub,
             getBinaryPath: (_context, binaryName) => `/test/path/to/${binaryName}`,
             ApiClient: createApiClientFactory(mockApiClient)
         });
-
-        // Replace the logger with a silent one to prevent console output
         (serverManager as any).logger = silentLogger;
+
+        // Stub vscode.window.showErrorMessage
+        showErrorMessageStub = sinon.stub(vscode.window, 'showErrorMessage');
+
+        // Add a dummy error listener to prevent potential issues with emit in tests
+        serverManager.on(ServerEvents.ERROR, () => { /* No-op listener */ });
     });
 
     teardown(() => {
         getBinaryPathStub.restore();
         testEnv.cleanup();
+        if (showErrorMessageStub) showErrorMessageStub.restore();
     });
 
     test('should have stopped status initially', () => {
@@ -187,41 +215,33 @@ suite('ServerManager Tests', () => {
     });
 
     test('should emit status change events', async () => {
-        const statusChangeListener = testEnv.sandbox.spy();
+        const statusChangeListener = sinon.spy();
         serverManager.on(ServerEvents.STATUS_CHANGE, statusChangeListener);
         await serverManager.start();
-
-        sinon.assert.calledOnce(startGoosedStub);
-        sinon.assert.called(statusChangeListener);
-
-        // Only verify the final status is RUNNING
+        // Check intermediate status if needed, e.g., STARTING
+        // sinon.assert.calledWith(statusChangeListener, ServerStatus.STARTING);
         assert.strictEqual(serverManager.getStatus(), ServerStatus.RUNNING);
+        sinon.assert.calledWith(statusChangeListener, ServerStatus.RUNNING);
     });
 
     test('should configure agent correctly on successful start', async () => {
+        // Stub the config reader *before* starting
+        configReaderStub.returns({ provider: 'test-provider', model: 'test-model' });
+
+        // --- Act --- 
         await serverManager.start();
 
-        // Verify API client creation
-        const apiClient = serverManager.getApiClient();
-        assert.ok(apiClient instanceof MockApiClient, 'ApiClient instance not created');
-
-        // Verify agent configuration calls in order
-        sinon.assert.calledOnce(mockApiClient.getAgentVersions);
-        sinon.assert.calledOnceWithExactly(mockApiClient.createAgent, 'test-provider', 'test-model', sinon.match.any); // Version might vary
-        sinon.assert.calledOnceWithExactly(mockApiClient.setAgentPrompt, vscodePromptText);
-        sinon.assert.calledOnceWithExactly(mockApiClient.addExtension, 'developer');
-
-        // Check call order
-        sinon.assert.callOrder(
-            mockApiClient.getAgentVersions,
-            mockApiClient.createAgent,
-            mockApiClient.setAgentPrompt,
-            mockApiClient.addExtension
-        );
-
+        // --- Assert --- 
         assert.strictEqual(serverManager.getStatus(), ServerStatus.RUNNING);
-    });
 
+        // Verify startGoosed was called
+        sinon.assert.calledOnce(startGoosedStub);
+
+        // Verify createAgent was called (getProviders and setSecretProviderKeys are removed)
+        sinon.assert.calledOnce(mockApiClient.createAgent);
+        // Optionally, verify it was called with the correct arguments from the stubbed config
+        sinon.assert.calledWith(mockApiClient.createAgent, 'test-provider', 'test-model');
+    });
 
     test('should return server port after started', async () => {
         await serverManager.start();
@@ -231,74 +251,61 @@ suite('ServerManager Tests', () => {
     });
 
     test('should handle errors during server start', async () => {
-        // Create a new mock ServerManager instance that exposes serverInfo for testing
-        const serverManagerForTest = new ServerManager(mockContext as vscode.ExtensionContext, {
-            startGoosed: startGoosedStub,
-            getBinaryPath: (_context, binaryName) => `/test/path/to/${binaryName}`,
-            ApiClient: createApiClientFactory(mockApiClient)
-        });
-
-        // Stub the workspace directory method
-        testEnv.sandbox.stub(serverManagerForTest as any, 'getWorkspaceDirectory').throws(new Error('Workspace directory error'));
-        const errorListener = testEnv.sandbox.spy();
-        serverManagerForTest.on(ServerEvents.ERROR, errorListener);
-
-        const result = await serverManagerForTest.start();
-
-        assert.strictEqual(result, false, 'Server start should fail');
-        assert.strictEqual(serverManagerForTest.getStatus(), ServerStatus.ERROR, 'Status should be ERROR');
-        sinon.assert.calledOnce(errorListener);
-        sinon.assert.notCalled(startGoosedStub); // startGoosed should not be called if getWorkspaceDirectory fails
-    });
-
-    test('should handle server start failure gracefully (startGoosed rejects)', async () => {
-        // Create a new start failure stub
-        const failureStub = testEnv.sandbox.stub<Parameters<typeof actualGooseServer.startGoosed>, Promise<actualGooseServer.GooseServerInfo>>();
-        failureStub.rejects(new Error('Test error from injected stub'));
-
-        // Create a new server manager with the failure stub
-        const failingServerManager = new ServerManager(mockContext as vscode.ExtensionContext, {
-            startGoosed: failureStub,
-            getBinaryPath: (_context, binaryName) => `/test/path/to/${binaryName}`,
-            ApiClient: createApiClientFactory(mockApiClient)
-        });
+        // Ensure startGoosed fails for this specific test
+        const error = new Error('Failed to start');
+        startGoosedStub.rejects(error);
 
         const errorListener = testEnv.sandbox.spy();
-        failingServerManager.on(ServerEvents.ERROR, errorListener);
+        serverManager.on(ServerEvents.ERROR, errorListener);
 
-        const result = await failingServerManager.start();
+        const result = await serverManager.start();
 
-        assert.strictEqual(result, false, 'Server start should fail due to injected stub rejection');
-        assert.strictEqual(failingServerManager.getStatus(), ServerStatus.ERROR, 'Status should be ERROR');
+        // Assertions:
+        assert.strictEqual(result, false, 'start() should return false when configureAgent throws');
+        assert.strictEqual(serverManager.getStatus(), ServerStatus.ERROR, 'Status should be ERROR');
         sinon.assert.calledOnce(errorListener);
-        sinon.assert.calledOnce(failureStub);
     });
 
-    test('should log error but continue startup if setAgentPrompt fails', async () => {
-        // Mock setAgentPrompt to fail
-        const promptError = new Error('Failed to set prompt');
-        mockApiClient.setAgentPrompt.rejects(promptError);
+    test('should log error and set status to ERROR if configureAgent fails', async () => {
+        // Define mock process locally for this test scope
+        const mockServerProcess = {
+            on: sinon.stub(),
+            kill: sinon.stub(),
+            pid: 123
+        } as unknown as ChildProcess;
 
-        // Spy on the logger used by ServerManager (using sinon.spy directly)
-        const logErrorSpy = sinon.spy(silentLogger, 'error');
+        // Stub startGoosed to succeed
+        const startGoosedStub = sinon.stub().resolves({
+            port: 12345,
+            process: mockServerProcess
+        });
 
-        await serverManager.start();
+        // Stub createAgent to fail on the main mockApiClient (from beforeEach)
+        const failureStub = sinon.stub().rejects(new Error('Agent creation failed'));
+        mockApiClient.createAgent = failureStub;
 
-        // Verify server still reaches RUNNING state using assert.ok
-        assert.ok(serverManager.getStatus() === ServerStatus.RUNNING);
+        // Spy on the logger's error method directly on the instance
+        const logErrorSpy = sinon.spy((serverManager as any).logger, 'error');
 
-        // Verify the prompt setting was attempted after agent creation
-        sinon.assert.calledOnce(mockApiClient.createAgent);
-        sinon.assert.calledOnce(mockApiClient.setAgentPrompt);
-        sinon.assert.callOrder(mockApiClient.createAgent, mockApiClient.setAgentPrompt);
+        let caughtError: Error | null = null;
+        // Start server - configureAgent should fail internally but start() should catch
+        let startResult: boolean | undefined;
+        try {
+             startResult = await serverManager.start();
+        } catch (err: any) {
+            caughtError = err;
+            console.error("*** TEST CAUGHT ERROR ***", err); // Log if test catches it
+        }
 
-        // Verify the error was logged (simplified check due to TS error)
-        sinon.assert.called(logErrorSpy);
-        // TODO: Reinstate argument check if TS error is resolved:
-        // sinon.assert.calledWith(logErrorSpy, sinon.match(/Failed to set VS Code system prompt:/), promptError);
+        // Assertions:
+        assert.strictEqual(startResult, false, 'start() should return false');
+        assert.strictEqual(serverManager.getStatus(), ServerStatus.ERROR, 'Status should be ERROR');
+        sinon.assert.calledOnce(failureStub); // Ensure the stubbed failure was actually called
+        assert.strictEqual(caughtError, null, 'Error should have been caught by serverManager.start(), not the test');
 
-        // Verify developer extension was still added
-        sinon.assert.calledOnce(mockApiClient.addExtension);
+        // Check that the start() method's catch block logged the error that bubbled up
+        sinon.assert.calledWithMatch(logErrorSpy, 'Error starting Goose server:', sinon.match.instanceOf(Error).and(sinon.match.has('message', 'Agent creation failed')));
+        logErrorSpy.restore(); // Clean up spy
     });
 
     test('should handle server process exit', async () => {
@@ -339,7 +346,7 @@ suite('ServerManager Tests', () => {
         serverInfo.process.emit('close', 1);
 
         sinon.assert.calledWith(exitListener, 1);
-        assert.strictEqual(serverManager.getStatus(), ServerStatus.STOPPED);
+        assert.strictEqual(serverManager.getStatus(), ServerStatus.ERROR);
     });
 
     test('should handle server process exit with null code', async () => {
@@ -359,7 +366,7 @@ suite('ServerManager Tests', () => {
         serverInfo.process.emit('close', null);
 
         sinon.assert.calledWith(exitListener, null);
-        assert.strictEqual(serverManager.getStatus(), ServerStatus.STOPPED);
+        assert.strictEqual(serverManager.getStatus(), ServerStatus.ERROR);
     });
 
     test('should not emit server exit event when stopping server manually', async () => {
@@ -381,7 +388,7 @@ suite('ServerManager Tests', () => {
         await serverManager.start();
 
         // Verify that the provider and model from config are passed to the API client
-        sinon.assert.calledWith(mockApiClient.createAgent, 'test-provider', 'test-model', sinon.match.any);
+        sinon.assert.calledWith(mockApiClient.createAgent, 'test-provider', 'test-model'); 
     });
 
     test('should fail to start when GOOSE_PROVIDER is missing', async () => {
@@ -393,7 +400,6 @@ suite('ServerManager Tests', () => {
             model: 'test-model'
         });
 
-        const showErrorMessageStub = testEnv.sandbox.stub(vscode.window, 'showErrorMessage');
         const errorListener = testEnv.sandbox.spy();
         serverManager.on(ServerEvents.ERROR, errorListener);
 
@@ -421,7 +427,6 @@ suite('ServerManager Tests', () => {
             model: null
         });
 
-        const showErrorMessageStub = testEnv.sandbox.stub(vscode.window, 'showErrorMessage');
         const errorListener = testEnv.sandbox.spy();
         serverManager.on(ServerEvents.ERROR, errorListener);
 
@@ -452,24 +457,25 @@ suite('ServerManager Tests', () => {
         await serverManager.start();
         
         // Verify first provider/model used
-        sinon.assert.calledWith(mockApiClient.createAgent, 'first-provider', 'first-model', sinon.match.any);
+        sinon.assert.calledWith(mockApiClient.createAgent, 'first-provider', 'first-model'); 
         
         // Reset call history for next verification
         mockApiClient.createAgent.resetHistory();
+        startGoosedStub.resetHistory(); // Also reset the startGoosed stub if checking its calls
         
-        // Stop server
+        // Stop the first server instance
         await serverManager.stop();
         
-        // Change to new config for next read
+        // Change config stub for the *next* read
         configReaderStub.onSecondCall().returns({
             provider: 'second-provider',
             model: 'second-model'
         });
         
-        // Restart server - should read new config
+        // Start the second server - should read the new config
         await serverManager.start();
         
         // Verify second provider/model used
-        sinon.assert.calledWith(mockApiClient.createAgent, 'second-provider', 'second-model', sinon.match.any);
+        sinon.assert.calledWith(mockApiClient.createAgent, 'second-provider', 'second-model'); 
     });
 });

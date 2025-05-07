@@ -2,9 +2,9 @@ import * as fsDefault from 'fs';
 import * as osDefault from 'os';
 import * as path from 'path';
 import * as YAML from 'yaml';
-import { getLogger } from './logging';
+import { logger as singletonLogger } from './logger';
 
-const logger = getLogger('ConfigReader');
+const logger = singletonLogger.createSource('ConfigReader');
 
 export interface GooseConfig {
     provider: string | null;
