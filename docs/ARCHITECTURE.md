@@ -115,7 +115,7 @@ sequenceDiagram
 ## Communication
 
 *   **VS Code UI <-> Extension Host:** Standard VS Code API (Commands, Context Menus, WebviewViewProvider).
-*   **Extension Host <-> Chat Webview:** Asynchronous message passing (`postMessage`, `onDidReceiveMessage`). Defined message types in `src/common-types.ts`.
+*   **Extension Host <-> Chat Webview:** Asynchronous message passing (`postMessage`, `onDidReceiveMessage`), including messages like `WEBVIEW_READY` for initialization. Defined message types in `src/common-types.ts`.
 *   **Extension Host <-> `goosed` Process:**
     *   Process Management: Spawning/killing the `goosed` executable using Node.js `child_process`.
     *   API Communication: HTTP requests from the Extension Host's `ApiClient` to the local HTTP server run by `goosed`. A secret key is used for authentication.
@@ -152,19 +152,23 @@ sequenceDiagram
     %% Status Check and Agent Configuration %%
     ExtHost->>GoosedProcess: GET /status (check server health)
     GoosedProcess-->>ExtHost: 200 OK (server ready)
-    
+
     %% Agent Version Check %%
     ExtHost->>GoosedProcess: GET /agent/versions
     GoosedProcess-->>ExtHost: Available versions and default version
-    
-    %% Configure Agent %%
-    ExtHost->>GoosedProcess: POST /agent (configure provider/model)
-    GoosedProcess-->>ExtHost: Agent configuration success
-    
-    %% Add Extensions %%
-    ExtHost->>GoosedProcess: POST /extensions/add (add developer extension)
+
+    %% Add 'developer' Extension %%
+    ExtHost->>GoosedProcess: POST /extensions/add (body: {name: "developer", type: "builtin"})
     GoosedProcess-->>ExtHost: Extension added successfully
-    
+
+    %% Configure Agent (Provider/Model/Version) %%
+    ExtHost->>GoosedProcess: POST /agent/update_provider (body: {provider, model, version})
+    GoosedProcess-->>ExtHost: Agent configuration success
+
+    %% Set Initial System Prompt %%
+    ExtHost->>GoosedProcess: POST /agent/prompt (body: {extension: vscodePrompt})
+    GoosedProcess-->>ExtHost: System prompt set successfully
+
     ExtHost->>ExtHost: Set Status = RUNNING
     ExtHost->>ChatWebview: Post message (SERVER_STATUS, running)
     deactivate ExtHost #LightSkyBlue
@@ -214,9 +218,10 @@ sequenceDiagram
     *   Once the process confirms it's running and listening on a port, the `ServerManager` creates an `ApiClient` configured with the port and secret key.
     *   It checks server health via `/status` endpoint.
     *   It configures the agent by:
-        *   Fetching available versions from `/agent/versions`
-        *   Creating the agent with appropriate provider and model via `/agent`
-        *   Adding extensions like the "developer" extension via `/extensions/add`
+        *   Fetching available versions from `/agent/versions`.
+        *   Adding the "developer" extension via `POST /extensions/add`.
+        *   Updating the agent's provider, model, and version via `POST /agent/update_provider`.
+        *   Setting the initial system prompt via `POST /agent/prompt`.
     *   The status is updated to `RUNNING` and propagated to the Chat Webview.
 3.  **Stopping:**
     *   The `stop` method (triggered by command or extension deactivation) sends a termination signal to the `goosed` process.
@@ -238,6 +243,7 @@ Security is managed through several layers:
 3.  **Process Isolation:** The Chat Webview runs in an isolated iframe sandbox, limiting its direct access to VS Code APIs or the user's system. Communication happens strictly through controlled message passing with the Extension Host.
 
 4.  **Binary Execution:** The extension relies on executing the `goosed` binary, which is expected to be provided by the main Goose Desktop application installation. Standard security considerations around executing external binaries apply.
+5.  **Logging:** The `ApiClient` can be configured to log request/response bodies (excluding secrets) via the `goose.logging.logSensitiveRequests` setting. This is disabled by default to protect potentially sensitive user data.
 
 ## Session Management
 
