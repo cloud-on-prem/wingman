@@ -52,24 +52,19 @@ export class ChatProcessor {
     public async sendMessage(
         text: string, 
         codeReferences?: any[], 
-        prependedCode?: any,  // New parameter for <100 line code selections
+        prependedCode?: any,  
         messageId?: string, 
         sessionId?: string
     ): Promise<void> {
-        // Task 2.1: Validate User Input & Task 2.2: Log Empty Message Attempts
         if (!text || text.trim() === '') {
-            // Check if there's also no code context. If pure empty, it's more notable.
             if ((!codeReferences || codeReferences.length === 0) && !prependedCode) {
                 logger.info('ChatProcessor: sendMessage called with empty user text and no code context. Not proceeding.');
             } else {
                 logger.info('ChatProcessor: sendMessage called with empty user text (but with code context). Not proceeding as per task 2.1 focusing on user text.');
             }
-            // Not proceeding further if user's own typed text is empty.
-            // This fulfills the requirement: "If IT [user text] is empty after trimming, do not proceed"
             return;
         }
 
-        // Detailed logging at the start of the method
         console.log("--- ChatProcessor.sendMessage Start ---");
         console.log("Received text:", text);
         console.log("Received codeReferences:", JSON.stringify(codeReferences));
@@ -77,13 +72,10 @@ export class ChatProcessor {
         console.log("Received messageId:", messageId);
         console.log("Received sessionId:", sessionId);
         
-        // Ensure codeReferences is an array
         codeReferences = codeReferences || [];
 
-        // Get the session ID (from parameter or current session)
         let effectiveSessionId: string | undefined = sessionId;
 
-        // Only try to get current session if no sessionId was provided
         if (!effectiveSessionId && this.sessionManager) {
             const currentSessionId = this.sessionManager.getCurrentSessionId();
             if (currentSessionId) {
@@ -93,34 +85,28 @@ export class ChatProcessor {
 
         console.log("Using session ID:", effectiveSessionId || "none (creating new session)");
 
-        // Format message with prepended code if provided
-        // or with code references if provided
         let formattedText = text || '';
         
-        let prependedCodeProcessedAndValid = false; // Flag to track if valid prepended code was processed
+        let prependedCodeProcessedAndValid = false; 
 
         if (prependedCode) {
-            // Task 3.2: Validate prependedCode.content
             if (prependedCode.content && typeof prependedCode.content === 'string') {
                 const originalContent = prependedCode.content;
                 const trimmedContent = originalContent.trim();
 
                 if (trimmedContent === '') {
                     logger.info('ChatProcessor: prependedCode.content is empty or whitespace after trimming. Not including it.');
-                    // prependedCodeProcessedAndValid remains false, so codeReferences might be processed later
                 } else {
-                    // Content is valid, proceed to use it
                     const languageId = prependedCode.languageId || '';
-                    const fileName = prependedCode.fileName || 'snippet'; // Default filename if not provided
+                    const fileName = prependedCode.fileName || 'snippet'; 
                     
                     console.log(`DEBUG: Adding prepended code block for ${fileName} (${languageId})`);
                     console.log(`DEBUG: Prepended code content length (trimmed): ${trimmedContent.length}`);
                     
-                    // Use template literals correctly for the code block
                     const codeBlock = "```" + languageId + "\n" + trimmedContent + "\n```\n\n";
                     
                     formattedText = codeBlock + formattedText;
-                    codeReferences = []; // Clear other references as prepended code takes precedence
+                    codeReferences = []; 
                     prependedCodeProcessedAndValid = true;
                     
                     console.log("Formatted message with prepended code block");
@@ -128,24 +114,19 @@ export class ChatProcessor {
                 }
             } else {
                 logger.warn('ChatProcessor: prependedCode object present but its content is missing or not a string. Ignoring prependedCode.');
-                // prependedCodeProcessedAndValid remains false, so codeReferences might be processed later
             }
         }
 
-        // Task 3.3: Validate codeReference.selectedText and prepare content blocks
         const validReferenceSummaryLines: string[] = [];
         const additionalContentBlocks: Content[] = [];
 
-        // Process codeReferences only if prependedCode was not processed or was invalid
         if (!prependedCodeProcessedAndValid && codeReferences && codeReferences.length > 0) {
             for (const reference of codeReferences) {
-                // Assuming reference structure from CodeReferenceManager: { filePath, startLine, endLine, selectedText, languageId, fileName }
                 if (reference && reference.selectedText && typeof reference.selectedText === 'string') {
                     const trimmedSelectedText = reference.selectedText.trim();
                     if (trimmedSelectedText === '') {
                         logger.info(`ChatProcessor: codeReference from ${reference.filePath || 'unknown file'} selectedText is empty. Excluding this reference.`);
                     } else {
-                        // Valid selectedText: include its metadata string and content block
                         validReferenceSummaryLines.push(`From ${reference.filePath}:${reference.startLine}-${reference.endLine}`);
                         
                         const codeBlock = "```" + (reference.languageId || '') + "\n" + trimmedSelectedText + "\n```";
@@ -159,9 +140,9 @@ export class ChatProcessor {
 
             if (validReferenceSummaryLines.length > 0) {
                 if (formattedText.length > 0) {
-                    formattedText += '\n\n'; // Add separation if user text exists
+                    formattedText += '\n\n'; 
                 }
-                formattedText += validReferenceSummaryLines.join('\n'); // Append all valid summaries
+                formattedText += validReferenceSummaryLines.join('\n'); 
                 console.log("Formatted message with valid code references summary.");
             }
         }
@@ -169,7 +150,7 @@ export class ChatProcessor {
         console.log("Final formatted message text (with reference summaries):", formattedText);
         additionalContentBlocks.forEach((block, index) => {
             if (block.type === 'text') {
-                console.log(`Additional content block ${index + 1}:`, block.text.substring(0, 100) + '...'); // Log snippet of code blocks
+                console.log(`Additional content block ${index + 1}:`, block.text.substring(0, 100) + '...'); 
             } else if (block.type === 'image') {
                 console.log(`Additional content block ${index + 1}: Image block (mimeType: ${block.mimeType}, data length: ${block.data.length})`);
             } else {
@@ -177,9 +158,8 @@ export class ChatProcessor {
             }
         });
 
-        // Create a user message. `formattedText` is guaranteed to be non-empty if we passed the initial check.
         const userMessageContent: Content[] = [{ type: 'text', text: formattedText }];
-        userMessageContent.push(...additionalContentBlocks); // Add actual code blocks from valid references
+        userMessageContent.push(...additionalContentBlocks); 
 
         const userMessage: Message = {
             id: messageId || `user_${Date.now()}`,
@@ -188,15 +168,12 @@ export class ChatProcessor {
             content: userMessageContent
         };
 
-        // Add to current messages
         this.currentMessages.push(userMessage);
         console.log("Added user message to conversation, total messages:", this.currentMessages.length);
 
-        // Reset stop flag
         this.shouldStop = false;
 
         try {
-            // Send the message to the server
             console.log("Sending chat request to server...");
             const response = await this.sendChatRequest(effectiveSessionId);
             console.log("Got response from server, status:", response.status);
@@ -213,43 +190,32 @@ export class ChatProcessor {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
 
-            // Create a unique ID for the AI message
             const aiMessageId = `ai_${Date.now()}`;
             console.log("Created AI message ID:", aiMessageId);
 
-            // Initialize empty content
             let fullText = '';
 
-            // Ensure the response body is available
             if (!response.body) {
-                throw new Error('Response body is empty');
+                throw new Error('Response body is null');
             }
 
-            // Create a reader for the response
             const reader = response.body.getReader();
             console.log("Created reader for response body");
 
-            // Create a new message object
-            console.log("Creating initial AI message with current timestamp");
-            const currentTimestamp = Date.now();
             const aiMessage: Message = {
                 id: aiMessageId,
                 role: 'assistant',
-                created: currentTimestamp, // Use the current time for consistency
+                created: Date.now(),
                 content: [{
                     type: 'text',
                     text: ''
                 }]
             };
 
-            // Add to current messages
             this.currentMessages.push(aiMessage);
             console.log("Added AI message placeholder to conversation, total messages:", this.currentMessages.length);
 
-            // Read the streaming response
-            console.log("Starting to read streaming response...");
             while (true) {
-                // Check if we should stop
                 if (this.shouldStop) {
                     console.log("Stopping generation (shouldStop flag is true)");
                     reader.cancel();
@@ -266,27 +232,18 @@ export class ChatProcessor {
                     break;
                 }
 
-                // Convert the Uint8Array to a string
                 const chunk = new TextDecoder().decode(value);
                 console.log("Received chunk:", chunk);
 
-                // Always update the content with whatever we have
                 fullText += chunk;
-                console.log("Updated fullText:", fullText);
 
-                // Check if the content is a valid JSON string
                 if (fullText.trim().startsWith('data:')) {
-                    // Process the content
                     try {
-                        // Extract the messages from the data: prefix
                         const lines = fullText.split('\n').filter(line => line.trim() !== '');
 
-                        // Get the LAST message from the response
-                        // This ensures we display the final message state
                         let lastMessageData = null;
                         let lastAssistantMessage = null;
 
-                        // Process each line to find all messages
                         for (const line of lines) {
                             if (line.startsWith('data:')) {
                                 try {
@@ -295,10 +252,8 @@ export class ChatProcessor {
 
                                     const data = JSON.parse(jsonStr);
 
-                                    // Store the last message data we find
                                     lastMessageData = data;
 
-                                    // If it's an assistant message, store it specifically
                                     if (data.type === 'Message' &&
                                         data.message &&
                                         data.message.role === 'assistant') {
@@ -310,25 +265,16 @@ export class ChatProcessor {
                             }
                         }
 
-                        // If we found an assistant message, use it directly
                         if (lastAssistantMessage) {
                             console.log("Using latest assistant message:", lastAssistantMessage);
 
-                            // Update the message ID to match our expected ID pattern
                             lastAssistantMessage.id = aiMessage.id;
-
-                            // IMPORTANT: Always use the CURRENT timestamp for consistency
-                            // This ensures timestamps reflect when messages were actually received
                             lastAssistantMessage.created = Date.now();
 
-                            // Send the extracted message directly
                             this.emit(ChatEvents.MESSAGE_RECEIVED, lastAssistantMessage);
-                        }
-                        // Otherwise, use any message data we found
-                        else if (lastMessageData) {
+                        } else if (lastMessageData) {
                             console.log("Using latest message data:", lastMessageData);
 
-                            // Try to extract message content
                             let messageText = '';
 
                             if (lastMessageData.message &&
@@ -344,18 +290,16 @@ export class ChatProcessor {
                             if (messageText) {
                                 console.log("Extracted message text from latest data:", messageText);
                                 const updatedMessage = { ...aiMessage };
-                                updatedMessage.created = Date.now(); // Use current timestamp
+                                updatedMessage.created = Date.now();
                                 updatedMessage.content = [{
                                     type: 'text',
                                     text: messageText
                                 }];
 
-                                // Send the updated message
                                 this.emit(ChatEvents.MESSAGE_RECEIVED, updatedMessage);
                             } else {
-                                // Last resort: use the raw JSON data
                                 const updatedMessage = { ...aiMessage };
-                                updatedMessage.created = Date.now(); // Use current timestamp
+                                updatedMessage.created = Date.now();
                                 updatedMessage.content = [{
                                     type: 'text',
                                     text: JSON.stringify(lastMessageData, null, 2)
@@ -364,41 +308,34 @@ export class ChatProcessor {
                                 this.emit(ChatEvents.MESSAGE_RECEIVED, updatedMessage);
                             }
                         } else {
-                            // Extreme fallback - use raw text
-                            console.log("No valid messages found, using raw text");
                             const updatedMessage = { ...aiMessage };
-                            updatedMessage.created = Date.now(); // Use current timestamp
+                            updatedMessage.created = Date.now();
                             updatedMessage.content = [{
                                 type: 'text',
                                 text: fullText
                             }];
 
-                            // Send the raw text as a message
                             this.emit(ChatEvents.MESSAGE_RECEIVED, updatedMessage);
                         }
                     } catch (e) {
                         console.error('Error processing chunk:', e);
 
-                        // As a fallback, just use the raw text
                         const updatedMessage = { ...aiMessage };
                         updatedMessage.content = [{
                             type: 'text',
                             text: fullText
                         }];
 
-                        // Send the raw text as a message
                         this.emit(ChatEvents.MESSAGE_RECEIVED, updatedMessage);
                     }
                 } else {
-                    // If it's not JSON, just use it as raw text
                     const updatedMessage = { ...aiMessage };
-                    updatedMessage.created = Date.now(); // Use current timestamp
+                    updatedMessage.created = Date.now();
                     updatedMessage.content = [{
                         type: 'text',
                         text: fullText
                     }];
 
-                    // Send the updated message
                     this.emit(ChatEvents.MESSAGE_RECEIVED, updatedMessage);
                 }
             }
@@ -421,11 +358,9 @@ export class ChatProcessor {
         }
         this.shouldStop = false;
 
-        // If there's an active message being generated, finish it with current timestamp
         if (this.currentMessages.length > 0) {
             const lastMessage = this.currentMessages[this.currentMessages.length - 1];
             if (lastMessage.role === 'assistant') {
-                // Update the timestamp to the current time
                 lastMessage.created = Date.now();
             }
         }
@@ -468,10 +403,8 @@ export class ChatProcessor {
         console.log("Creating new AbortController for chat request");
         this.abortController = new AbortController();
 
-        // Get workspace directory to use as working directory
         const workspaceDirectory = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
 
-        // Get API client from server manager
         const apiClient = this.serverManager.getApiClient();
         if (!apiClient) {
             throw new Error('API client not available');
@@ -491,16 +424,12 @@ export class ChatProcessor {
         this.eventEmitter.emit(event, ...args);
     }
 
-    // Add this helper function to ensure text content is properly formatted
     private ensureValidTextContent(text: any): string {
-        // If it's already a string
         if (typeof text === 'string') {
             return text;
         }
 
-        // If it's an object with a text property
         if (text && typeof text === 'object') {
-            // Check for common message formats
             if (typeof text.text === 'string') {
                 return text.text;
             }
@@ -509,7 +438,6 @@ export class ChatProcessor {
                 return text.content;
             }
 
-            // Sometimes the content is an array of parts
             if (Array.isArray(text.content)) {
                 const combinedContent = text.content
                     .map((part: any) => {
@@ -525,12 +453,10 @@ export class ChatProcessor {
                 }
             }
 
-            // If the object has a 'message' property
             if (typeof text.message === 'string') {
                 return text.message;
             }
 
-            // Try to stringify the object if all else fails
             try {
                 const jsonString = JSON.stringify(text);
                 if (jsonString !== '{}' && jsonString !== '[]') {
@@ -541,7 +467,6 @@ export class ChatProcessor {
             }
         }
 
-        // If it's some other type, try to convert it to string
         if (text !== undefined && text !== null) {
             try {
                 return String(text);
@@ -550,15 +475,10 @@ export class ChatProcessor {
             }
         }
 
-        // Fallback for empty/invalid content
         return "";
     }
 
-    /**
-     * Process and handle the AI's message
-     */
     private handleAIMessage(content: any, messageId: string): Message {
-        // Create a fresh message object with a unique ID if we don't have one
         const aiMessage: Message = {
             id: messageId || `ai_${Date.now()}`,
             role: 'assistant',
@@ -566,10 +486,8 @@ export class ChatProcessor {
             content: []
         };
 
-        // Process the content
         const textContent = this.ensureValidTextContent(content);
 
-        // Add the text as content
         if (textContent) {
             aiMessage.content.push({
                 type: 'text',
@@ -577,38 +495,28 @@ export class ChatProcessor {
             });
         }
 
-        // Don't emit the message event here - only in the main function
         return aiMessage;
     }
 
-    /**
-     * Update a session after a successful reply to remove the isLocal flag
-     * @param sessionId The ID of the session to update
-     */
     private async updateSessionAfterReply(sessionId: string): Promise<void> {
         if (!this.sessionManager) {
             return;
         }
 
         try {
-            // Get the sessions list
             const sessions = this.sessionManager.getSessions();
 
-            // Find the session with the matching ID
             const sessionIndex = sessions.findIndex(session => session.id === sessionId);
 
             if (sessionIndex !== -1 && sessions[sessionIndex].isLocal) {
                 console.log(`Updating session ${sessionId} to remove isLocal flag after successful reply`);
 
-                // Create a new session object without the isLocal flag
                 const updatedSession = { ...sessions[sessionIndex] };
                 delete updatedSession.isLocal;
 
-                // Update the session in the sessions array
                 const updatedSessions = [...sessions];
                 updatedSessions[sessionIndex] = updatedSession;
 
-                // Emit the sessions loaded event with the updated list
                 this.sessionManager.emitEvent(SessionEvents.SESSIONS_LOADED, updatedSessions);
             }
         } catch (error) {
