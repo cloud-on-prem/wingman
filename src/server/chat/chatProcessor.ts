@@ -193,33 +193,34 @@ export class ChatProcessor {
             const aiMessageId = `ai_${Date.now()}`;
             console.log("Created AI message ID:", aiMessageId);
 
-            let fullText = '';
-
+            // Ensure the response body is available
             if (!response.body) {
                 throw new Error('Response body is null');
             }
 
             const reader = response.body.getReader();
             console.log("Created reader for response body");
+            const decoder = new TextDecoder();
+            let accumulatedData = '';
 
             const aiMessage: Message = {
                 id: aiMessageId,
                 role: 'assistant',
                 created: Date.now(),
-                content: [{
-                    type: 'text',
-                    text: ''
-                }]
+                content: [{ type: 'text', text: '' }]
             };
 
             this.currentMessages.push(aiMessage);
             console.log("Added AI message placeholder to conversation, total messages:", this.currentMessages.length);
+            // Consider emitting an initial MESSAGE_RECEIVED here if a placeholder UI is desired immediately
+            // this.emit(ChatEvents.MESSAGE_RECEIVED, { ...aiMessage });
 
+            console.log("Starting to read streaming response...");
             while (true) {
                 if (this.shouldStop) {
                     console.log("Stopping generation (shouldStop flag is true)");
                     reader.cancel();
-                    this.emit(ChatEvents.FINISH, aiMessage, 'stopped');
+                    this.emit(ChatEvents.FINISH, { ...aiMessage }, 'stopped'); 
                     break;
                 }
 
@@ -228,115 +229,38 @@ export class ChatProcessor {
 
                 if (done) {
                     console.log("Stream complete, emitting FINISH event");
-                    this.emit(ChatEvents.FINISH, aiMessage, 'complete');
+                    this.emit(ChatEvents.FINISH, { ...aiMessage }, 'complete'); 
                     break;
                 }
 
-                const chunk = new TextDecoder().decode(value);
-                console.log("Received chunk:", chunk);
+                accumulatedData += decoder.decode(value, { stream: true });
+                let newlineIndex;
 
-                fullText += chunk;
+                while ((newlineIndex = accumulatedData.indexOf('\n')) >= 0) {
+                    const line = accumulatedData.substring(0, newlineIndex).trim();
+                    accumulatedData = accumulatedData.substring(newlineIndex + 1);
 
-                if (fullText.trim().startsWith('data:')) {
-                    try {
-                        const lines = fullText.split('\n').filter(line => line.trim() !== '');
-
-                        let lastMessageData = null;
-                        let lastAssistantMessage = null;
-
-                        for (const line of lines) {
-                            if (line.startsWith('data:')) {
-                                try {
-                                    const jsonStr = line.substring(5).trim();
-                                    if (jsonStr === '[DONE]') { continue; }
-
-                                    const data = JSON.parse(jsonStr);
-
-                                    lastMessageData = data;
-
-                                    if (data.type === 'Message' &&
-                                        data.message &&
-                                        data.message.role === 'assistant') {
-                                        lastAssistantMessage = data.message;
-                                    }
-                                } catch (e) {
-                                    console.error('Failed to parse JSON:', e);
+                    if (line.startsWith('data:')) {
+                        const jsonStr = line.substring(5).trim();
+                        if (jsonStr === '[DONE]') {
+                            continue; 
+                        }
+                        if (jsonStr) {
+                            try {
+                                const eventData = JSON.parse(jsonStr) as MessageEvent;
+                                if (eventData.type === 'Message' && eventData.message) {
+                                    aiMessage.content = eventData.message.content;
+                                    aiMessage.created = Date.now(); 
+                                    this.emit(ChatEvents.MESSAGE_RECEIVED, { ...aiMessage });
+                                } else if (eventData.type === 'Error') {
+                                    logger.error(`ChatProcessor: Stream error event: ${eventData.error}`);
+                                    this.emit(ChatEvents.ERROR, new Error(eventData.error));
                                 }
+                            } catch (e) {
+                                logger.error('ChatProcessor: Failed to parse SSE JSON line:', e, 'Problematic JSON string:', jsonStr);
                             }
                         }
-
-                        if (lastAssistantMessage) {
-                            console.log("Using latest assistant message:", lastAssistantMessage);
-
-                            lastAssistantMessage.id = aiMessage.id;
-                            lastAssistantMessage.created = Date.now();
-
-                            this.emit(ChatEvents.MESSAGE_RECEIVED, lastAssistantMessage);
-                        } else if (lastMessageData) {
-                            console.log("Using latest message data:", lastMessageData);
-
-                            let messageText = '';
-
-                            if (lastMessageData.message &&
-                                lastMessageData.message.content &&
-                                Array.isArray(lastMessageData.message.content) &&
-                                lastMessageData.message.content[0] &&
-                                lastMessageData.message.content[0].text) {
-                                messageText = lastMessageData.message.content[0].text;
-                            } else if (typeof lastMessageData.message === 'string') {
-                                messageText = lastMessageData.message;
-                            }
-
-                            if (messageText) {
-                                console.log("Extracted message text from latest data:", messageText);
-                                const updatedMessage = { ...aiMessage };
-                                updatedMessage.created = Date.now();
-                                updatedMessage.content = [{
-                                    type: 'text',
-                                    text: messageText
-                                }];
-
-                                this.emit(ChatEvents.MESSAGE_RECEIVED, updatedMessage);
-                            } else {
-                                const updatedMessage = { ...aiMessage };
-                                updatedMessage.created = Date.now();
-                                updatedMessage.content = [{
-                                    type: 'text',
-                                    text: JSON.stringify(lastMessageData, null, 2)
-                                }];
-
-                                this.emit(ChatEvents.MESSAGE_RECEIVED, updatedMessage);
-                            }
-                        } else {
-                            const updatedMessage = { ...aiMessage };
-                            updatedMessage.created = Date.now();
-                            updatedMessage.content = [{
-                                type: 'text',
-                                text: fullText
-                            }];
-
-                            this.emit(ChatEvents.MESSAGE_RECEIVED, updatedMessage);
-                        }
-                    } catch (e) {
-                        console.error('Error processing chunk:', e);
-
-                        const updatedMessage = { ...aiMessage };
-                        updatedMessage.content = [{
-                            type: 'text',
-                            text: fullText
-                        }];
-
-                        this.emit(ChatEvents.MESSAGE_RECEIVED, updatedMessage);
                     }
-                } else {
-                    const updatedMessage = { ...aiMessage };
-                    updatedMessage.created = Date.now();
-                    updatedMessage.content = [{
-                        type: 'text',
-                        text: fullText
-                    }];
-
-                    this.emit(ChatEvents.MESSAGE_RECEIVED, updatedMessage);
                 }
             }
         } catch (error) {
