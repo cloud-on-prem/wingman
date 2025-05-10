@@ -135,13 +135,13 @@ suite('Extension Test Suite', () => {
         mockCodeRefManager.getCodeReferenceFromSelection.callsFake(() => {
             // Simulate the check for whitespace/empty that the real method does
             const editor = vscode.window.activeTextEditor;
-            if (!editor || editor.selection.isEmpty || (selectionText && selectionText.trim() === '')) return null;
+            if (!editor || editor.selection.isEmpty || (selectionText && selectionText.trim() === '')) {return null;}
             return mockSelectionRef;
         });
         mockCodeRefManager.getCodeReferenceForEntireFile.callsFake((doc: vscode.TextDocument) => {
             // Simulate the check for whitespace/empty that the real method does
             const text = doc.getText(); // Gets full text
-            if (!text || text.trim() === '') return null;
+            if (!text || text.trim() === '') {return null;}
             return mockFileRef;
         });
 

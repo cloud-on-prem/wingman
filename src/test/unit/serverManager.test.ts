@@ -207,7 +207,7 @@ suite('ServerManager Tests', () => {
     teardown(() => {
         getBinaryPathStub.restore();
         testEnv.cleanup();
-        if (showErrorMessageStub) showErrorMessageStub.restore();
+        if (showErrorMessageStub) {showErrorMessageStub.restore();}
     });
 
     test('should have stopped status initially', () => {
