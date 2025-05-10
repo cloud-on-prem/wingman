@@ -20,7 +20,7 @@ The extension uses a multi-step build process defined in `package.json` scripts:
 
 1.  **`npm run build:extension`**: Uses `esbuild` to bundle the main extension code (`src/extension.ts` and its direct/indirect imports) into a single file (`out/extension.js`) with a sourcemap. This significantly reduces the package size and improves load times. The `vscode` module is marked as external as it's provided by the VS Code runtime. Dependencies listed in `devDependencies` (like `yaml`) should be correctly bundled.
 2.  **`npm run compile:tests`**: Uses the TypeScript compiler (`tsc`) based on the specific `tsconfig.tests.json` configuration. This compiles *only* the test files (`src/test/**/*.ts`) into JavaScript files within the `out/test/` directory, preserving the test file structure. This ensures test files are compiled separately from the main extension bundle and placed where the test runner expects them.
-3.  **`npm run build:webview`**: Navigates to the `webview-ui/` directory, installs its dependencies, and runs its build process (using Vite) to create the optimized chat interface assets in `webview-ui/dist/`.
+3.  **`npm run build:webview`**: Navigates to the `webview-ui/` directory and runs its build process (using Vite) to create the optimized chat interface assets in `webview-ui/dist/`. (Note: `webview-ui` dependencies should be installed separately as part of the initial dev setup or by CI).
 4.  **`npm run compile`**: Orchestrates the above steps, running `build:extension`, then `compile:tests`, then `build:webview`. This is the main script used for building the entire extension before testing or packaging. It ensures the main bundle is created first, followed by the separate compilation of tests, and finally the webview build.
 
 ## Testing
@@ -153,7 +153,6 @@ The type of Conventional Commit used when merging changes into `main` determines
 While the official release is automated, you can still build a local `.vsix` package for testing purposes using the scripts defined in `package.json`:
 
 -   `npm run package:dist`: Builds and packages into the `dist/` folder.
--   `npm run package`: Builds and packages into the root folder.
 -   `npm run package:skip-tests`: Skips tests, builds, and packages into the root folder.
 
 ```bash
