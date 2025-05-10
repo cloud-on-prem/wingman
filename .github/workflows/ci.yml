@@ -61,9 +61,8 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          npm install --no-fund --no-audit
-          cd webview-ui
-          npm install --no-fund --no-audit
+          npm ci --no-fund --no-audit
+          npm ci --no-fund --no-audit --prefix webview-ui
 
       - name: Lint
         run: |
@@ -127,7 +126,7 @@ jobs:
           ls -l dist
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2.0.8
         with:
           tag_name: ${{ github.ref_name }}
           generate_release_notes: false # Changelog is maintained separately

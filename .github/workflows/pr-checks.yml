@@ -23,9 +23,8 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          npm install --no-fund --no-audit
-          cd webview-ui
-          npm install --no-fund --no-audit
+          npm ci --no-fund --no-audit
+          npm ci --no-fund --no-audit --prefix webview-ui
 
       - name: Lint
         run: |
