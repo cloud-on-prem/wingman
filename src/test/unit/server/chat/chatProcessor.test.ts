@@ -59,6 +59,8 @@ suite('ChatProcessor Tests - Empty Message Validation', () => {
 
         mockSessionManager = testEnv.sandbox.createStubInstance(SessionManager);
         mockSessionManager.getCurrentSessionId.returns('test-session-id');
+        // Configure getSessions to return an empty array to prevent TypeError
+        mockSessionManager.getSessions.returns([]); 
 
         chatProcessor = new ChatProcessor(mockServerManager as unknown as ServerManager);
         chatProcessor.setSessionManager(mockSessionManager as unknown as SessionManager);
