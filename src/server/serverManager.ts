@@ -210,17 +210,26 @@ export class ServerManager {
                 } else if (code !== null && code !== 0) { 
                     this.logger.error(`[ServerManager] Server process exited unexpectedly with error code: ${code}. Previous status: ${previousStatus}. Setting status to ERROR.`);
                     this.setStatus(ServerStatus.ERROR);
-                } else if (signal) { 
-                    this.logger.warn(`[ServerManager] Server process exited unexpectedly due to signal: ${signal}. Previous status: ${previousStatus}. Setting status to ERROR.`);
+                } else if (code === null) { // Covers signals (where signal arg might be present) or other null code exits
+                    const reason = signal ? `due to signal: ${signal}` : "with null exit code (abnormal termination)";
+                    this.logger.warn(`[ServerManager] Server process exited unexpectedly ${reason}. Previous status: ${previousStatus}. Setting status to ERROR.`);
                     this.setStatus(ServerStatus.ERROR);
-                } else if (!wasRunningAndFullyStarted) {
+                } else if (!wasRunningAndFullyStarted) { // code must be 0 here if this branch is reached
                      this.logger.warn(`[ServerManager] Server process exited (code 0) but was not fully started. Previous status: ${previousStatus}. Setting status to ERROR.`);
                     this.setStatus(ServerStatus.ERROR);
                 } else { // code === 0 AND wasRunningAndFullyStarted
                     this.logger.info(`[ServerManager] Server process exited cleanly (code 0) after being fully started. Previous status: ${previousStatus}. Setting status to STOPPED.`);
                     this.setStatus(ServerStatus.STOPPED);
                 }
-                this.eventEmitter.emit(ServerEvents.SERVER_EXIT, code ?? signal); // Emit code or signal
+
+                let eventPayload: number | string | null = null;
+                if (code !== null) {
+                    eventPayload = code;
+                } else if (signal) {
+                    eventPayload = signal;
+                }
+                // If code is null and signal is null/undefined, eventPayload remains null.
+                this.eventEmitter.emit(ServerEvents.SERVER_EXIT, eventPayload);
             });
 
             this.serverInfo.process.on('error', (err) => {
