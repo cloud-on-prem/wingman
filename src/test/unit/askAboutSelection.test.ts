@@ -198,56 +198,73 @@ suite('Enhanced Ask About Selection Feature Tests', () => {
             (processor as any).sendChatRequest = sinon.stub().resolves(new Response());
             
             // Prepare test data
-            const prependedCode = {
-                content: 'const code = "small snippet";\nconsole.log(code);',
+            const prependedCode: CodeReference = { // Explicitly type and conform to CodeReference
+                id: 'prepended-test-id',
+                filePath: '/path/to/snippet.ts',
                 fileName: 'snippet.ts',
+                startLine: 1,
+                endLine: 2, // Assuming 2 lines for the snippet
+                selectedText: 'const code = "small snippet";\nconsole.log(code);', // Renamed from content
                 languageId: 'typescript'
             };
             
             // Call the method we're testing
             processor.sendMessage(
                 'Explain this code', // text
-                [], // codeReferences 
+                [], // codeReferencesParam
                 prependedCode, // prependedCode
                 'msg123', // messageId
                 'session123' // sessionId
             );
             
-            // Get the message directly from the ChatProcessor's internal state
-            const userMessage = (processor as any).currentMessages[0];
+            // Get the messages from ChatProcessor's internal state
+            const internalMessages = (processor as any).currentMessages;
+            assert.ok(internalMessages.length > 0, 'ChatProcessor should have at least one message');
+            const originalUserMessage = internalMessages[0];
+            assert.strictEqual(originalUserMessage.role, 'user', 'Message should have user role');
+            assert.ok(Array.isArray(originalUserMessage.content), 'Original message should have content array');
+            // Expecting [CodeContextPart, TextPart]
+            assert.strictEqual(originalUserMessage.content.length, 2, 'Original message content should have two parts');
+            assert.strictEqual(originalUserMessage.content[0].type, 'code_context', 'First part should be code_context');
+            assert.strictEqual(originalUserMessage.content[1].type, 'text', 'Second part should be text');
+
+            // Now, test the API-serialized version of the message
+            const serializedMessages = (processor as any).serializeMessagesForApi(internalMessages);
+            assert.ok(serializedMessages.length > 0, 'Should have serialized messages');
+            const serializedUserMessage = serializedMessages[0];
+            assert.strictEqual(serializedUserMessage.role, 'user');
+            assert.ok(Array.isArray(serializedUserMessage.content), 'Serialized message should have content array');
+            // Expecting [TextPart (from CodeContextPart), TextPart (original query)]
+            assert.strictEqual(serializedUserMessage.content.length, 2, 'Serialized message content should have two parts');
             
-            // Basic checks
-            assert.ok(userMessage, 'User message should be created');
-            assert.strictEqual(userMessage.role, 'user', 'Message should have user role');
-            assert.ok(Array.isArray(userMessage.content), 'Message should have content array');
-            assert.ok(userMessage.content.length > 0, 'Message content array should not be empty');
-            
-            // Get the text content of the message
-            const messageText = userMessage.content[0].text;
-            
-            // Test the formatting
+            const serializedCodePart = serializedUserMessage.content[0];
+            assert.strictEqual(serializedCodePart.type, 'text', 'First serialized part should be text (from code_context)');
+            const codePartText = (serializedCodePart as any).text;
+
+            const queryPart = serializedUserMessage.content[1];
+            assert.strictEqual(queryPart.type, 'text', 'Second serialized part should be text (query)');
+            const queryPartText = (queryPart as any).text;
+
+            // Test the formatting of the serialized code part
             assert.ok(
-                messageText.includes('```typescript'),
-                'Message should include typescript code block'
+                codePartText.includes('// Meta: FilePath="/path/to/snippet.ts"'),
+                'Serialized code part should include file path metadata'
             );
             assert.ok(
-                messageText.includes('const code'),
-                'Message should include the code content'
+                codePartText.includes('```typescript'),
+                'Serialized code part should include typescript code block'
             );
             assert.ok(
-                messageText.includes('console.log'),
-                'Message should include the complete code'
-            );
-            assert.ok(
-                messageText.includes('Explain this code'),
-                'Message should include the user question'
+                codePartText.includes('const code = "small snippet";'), // Check for actual code
+                'Serialized code part should include the code content'
             );
             
-            // Check that the markdown formatting is correct
-            // Code block should be before the question
-            const codeBlockIndex = messageText.indexOf('```typescript');
-            const questionIndex = messageText.indexOf('Explain this code');
-            assert.ok(codeBlockIndex < questionIndex, 'Code block should appear before the user question');
+            // Test the query part
+            assert.strictEqual(
+                queryPartText,
+                'Explain this code',
+                'Query part should contain the user question'
+            );
         } finally {
             // Restore the original method
             if (originalSendChatRequest) {

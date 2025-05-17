@@ -1,8 +1,9 @@
 import { EventEmitter } from 'events';
 import { TextDecoder } from 'util';
 import { ServerManager } from '../serverManager';
-import { Message, createUserMessage, Content } from '../../types';
+import { Message, MessageContent, TextPart, CodeContextPart } from '../../types'; // Updated imports
 import * as vscode from 'vscode';
+import { CodeReference } from '../../utils/codeReferenceManager'; // Added import
 import { SessionManager, SessionEvents } from './sessionManager';
 import { logger } from '../../utils/logger';
 
@@ -50,29 +51,41 @@ export class ChatProcessor {
      * Send a message to the Goose AI
      */
     public async sendMessage(
-        text: string, 
-        codeReferences?: any[], 
-        prependedCode?: any,  
-        messageId?: string, 
+        text: string,
+        codeReferencesParam?: CodeReference[], // Changed type from any[]
+        prependedCode?: CodeReference,  // Changed type from any, assuming it's a single CodeReference
+        messageId?: string,
         sessionId?: string
     ): Promise<void> {
-        if (!text || text.trim() === '') {
-            if ((!codeReferences || codeReferences.length === 0) && !prependedCode) {
-                logger.info('ChatProcessor: sendMessage called with empty user text and no code context. Not proceeding.');
-            } else {
-                logger.info('ChatProcessor: sendMessage called with empty user text (but with code context). Not proceeding as per task 2.1 focusing on user text.');
-            }
+        // Retain existing initial guard for empty text if no code context.
+        // The design implies that a message can consist only of CodeContextParts.
+        // However, the original check was:
+        // if (!text || text.trim() === '') {
+        //     if ((!codeReferencesParam || codeReferencesParam.length === 0) && !prependedCode) {
+        //         logger.info('ChatProcessor: sendMessage called with empty user text and no code context. Not proceeding.');
+        //         return;
+        //     } else {
+        //          // If there's code context, we might proceed even with empty text.
+        //          // For now, let's keep the original behaviour of requiring text if no code.
+        //     }
+        // }
+        // For now, let's simplify: if there's no text AND no code references at all, then return.
+        const hasText = text && text.trim() !== '';
+        const hasCodeReferences = codeReferencesParam && codeReferencesParam.length > 0;
+        const hasPrependedCode = !!prependedCode; // Simplified check
+
+        if (!hasText && !hasCodeReferences && !hasPrependedCode) {
+            logger.info('ChatProcessor: sendMessage called with empty user text and no code context. Not proceeding.');
             return;
         }
 
+
         console.log("--- ChatProcessor.sendMessage Start ---");
         console.log("Received text:", text);
-        console.log("Received codeReferences:", JSON.stringify(codeReferences));
+        console.log("Received codeReferencesParam:", JSON.stringify(codeReferencesParam));
         console.log("Received prependedCode:", JSON.stringify(prependedCode));
         console.log("Received messageId:", messageId);
         console.log("Received sessionId:", sessionId);
-        
-        codeReferences = codeReferences || [];
 
         let effectiveSessionId: string | undefined = sessionId;
 
@@ -85,90 +98,86 @@ export class ChatProcessor {
 
         console.log("Using session ID:", effectiveSessionId || "none (creating new session)");
 
-        let formattedText = text || '';
-        
-        let prependedCodeProcessedAndValid = false; 
+        const userMessageContent: MessageContent[] = [];
 
+        // Handle prependedCode: if it exists, treat it as a single CodeReference
+        // and convert it to a CodeContextPart.
+        // The original logic for prependedCode was to inline it into the text and clear other codeReferences.
+        // The new design suggests all code context becomes CodeContextPart.
+        // If prependedCode is meant to be the *only* code context, the calling code should ensure codeReferencesParam is empty.
         if (prependedCode) {
-            if (prependedCode.content && typeof prependedCode.content === 'string') {
-                const originalContent = prependedCode.content;
-                const trimmedContent = originalContent.trim();
-
-                if (trimmedContent === '') {
-                    logger.info('ChatProcessor: prependedCode.content is empty or whitespace after trimming. Not including it.');
-                } else {
-                    const languageId = prependedCode.languageId || '';
-                    const fileName = prependedCode.fileName || 'snippet'; 
-                    
-                    console.log(`DEBUG: Adding prepended code block for ${fileName} (${languageId})`);
-                    console.log(`DEBUG: Prepended code content length (trimmed): ${trimmedContent.length}`);
-                    
-                    const codeBlock = "```" + languageId + "\n" + trimmedContent + "\n```\n\n";
-                    
-                    formattedText = codeBlock + formattedText;
-                    codeReferences = []; 
-                    prependedCodeProcessedAndValid = true;
-                    
-                    console.log("Formatted message with prepended code block");
-                    console.log("DEBUG: Final formatted text with prepended code:", formattedText);
-                }
+            if (prependedCode.selectedText && prependedCode.selectedText.trim() !== '') {
+                userMessageContent.push({
+                    ...prependedCode, // Spread all properties from CodeReference
+                    type: 'code_context', // Add the type
+                });
+                logger.info(`ChatProcessor: Added prependedCode as CodeContextPart from ${prependedCode.filePath}.`);
             } else {
-                logger.warn('ChatProcessor: prependedCode object present but its content is missing or not a string. Ignoring prependedCode.');
+                logger.warn(`ChatProcessor: prependedCode from ${prependedCode.filePath || 'unknown file'} has empty selectedText. Excluding.`);
             }
         }
 
-        const validReferenceSummaryLines: string[] = [];
-        const additionalContentBlocks: Content[] = [];
-
-        if (!prependedCodeProcessedAndValid && codeReferences && codeReferences.length > 0) {
-            for (const reference of codeReferences) {
+        // Handle codeReferencesParam for multiple code references
+        // This will add them after prependedCode if both are present.
+        // The design doc implies codeReferencesParam is the main source.
+        if (codeReferencesParam && codeReferencesParam.length > 0) {
+            for (const reference of codeReferencesParam) {
                 if (reference && reference.selectedText && typeof reference.selectedText === 'string') {
                     const trimmedSelectedText = reference.selectedText.trim();
                     if (trimmedSelectedText === '') {
                         logger.info(`ChatProcessor: codeReference from ${reference.filePath || 'unknown file'} selectedText is empty. Excluding this reference.`);
                     } else {
-                        validReferenceSummaryLines.push(`From ${reference.filePath}:${reference.startLine}-${reference.endLine}`);
-                        
-                        const codeBlock = "```" + (reference.languageId || '') + "\n" + trimmedSelectedText + "\n```";
-                        additionalContentBlocks.push({ type: 'text', text: codeBlock });
-                        logger.info(`ChatProcessor: Adding content from codeReference ${reference.filePath}.`);
+                        userMessageContent.push({
+                            ...reference, // Spread all properties from CodeReference
+                            type: 'code_context', // Add the type
+                        });
+                        logger.info(`ChatProcessor: Added codeReference as CodeContextPart from ${reference.filePath}.`);
                     }
                 } else {
                     logger.warn(`ChatProcessor: codeReference from ${reference.filePath || 'unknown file'} has missing, null, or invalid selectedText. Excluding this reference.`);
                 }
             }
-
-            if (validReferenceSummaryLines.length > 0) {
-                if (formattedText.length > 0) {
-                    formattedText += '\n\n'; 
-                }
-                formattedText += validReferenceSummaryLines.join('\n'); 
-                console.log("Formatted message with valid code references summary.");
-            }
+        }
+        
+        // Add the user's textual query as a TextPart, if it exists
+        if (hasText) {
+            userMessageContent.push({
+                type: 'text',
+                text: text.trim(), // Use the original text, trimmed
+            });
+            logger.info('ChatProcessor: Added user text as TextPart.');
+        }
+        
+        // If after all processing, userMessageContent is empty, do not proceed.
+        // This can happen if text was empty and all code references were invalid/empty.
+        if (userMessageContent.length === 0) {
+            logger.info('ChatProcessor: No valid content (text or code) to send. Not proceeding.');
+            return;
         }
 
-        console.log("Final formatted message text (with reference summaries):", formattedText);
-        additionalContentBlocks.forEach((block, index) => {
-            if (block.type === 'text') {
-                console.log(`Additional content block ${index + 1}:`, block.text.substring(0, 100) + '...'); 
-            } else if (block.type === 'image') {
-                console.log(`Additional content block ${index + 1}: Image block (mimeType: ${block.mimeType}, data length: ${block.data.length})`);
+        console.log("Constructed userMessageContent parts:", userMessageContent.length);
+        userMessageContent.forEach((part, index) => {
+            if (part.type === 'text') {
+                console.log(`Content part ${index + 1} (TextPart):`, part.text.substring(0, 100) + '...');
+            } else if (part.type === 'code_context') {
+                console.log(`Content part ${index + 1} (CodeContextPart) from ${part.fileName}:${part.startLine}-${part.endLine}:`, part.selectedText.substring(0,100) + '...');
+            } else if (part.type === 'image') {
+                console.log(`Content part ${index + 1} (ImageContent): mimeType: ${part.mimeType}, data length: ${part.data.length}`);
             } else {
-                console.log(`Additional content block ${index + 1}: Unknown block type`, block);
+                 // This case should ideally not be hit with current MessageContent types
+                console.log(`Content part ${index + 1}: Unknown part type`, part);
             }
         });
 
-        const userMessageContent: Content[] = [{ type: 'text', text: formattedText }];
-        userMessageContent.push(...additionalContentBlocks); 
 
         const userMessage: Message = {
             id: messageId || `user_${Date.now()}`,
             role: 'user',
             created: Date.now(),
-            content: userMessageContent
+            content: userMessageContent,
         };
 
-        this.currentMessages.push(userMessage);
+        this.currentMessages.push(userMessage); // This will be used for API serialization later
         console.log("Added user message to conversation, total messages:", this.currentMessages.length);
 
         this.shouldStop = false;
@@ -323,6 +332,42 @@ export class ChatProcessor {
     /**
      * Send a chat request to the server
      */
+    private serializeMessagesForApi(messages: Message[]): Message[] {
+        return messages.map(msg => {
+            // Only modify user messages for now, as assistant messages are already in the expected format.
+            // And system messages are not handled by this processor.
+            if (msg.role !== 'user') {
+                return msg;
+            }
+
+            const serializedContent: MessageContent[] = [];
+            for (const part of msg.content) {
+                if (part.type === 'code_context') {
+                    const codeCtxPart = part as CodeContextPart;
+                    let codeToSend = codeCtxPart.selectedText;
+                    const lineCount = codeCtxPart.selectedText.split('\n').length;
+
+                    if (lineCount > 100) {
+                        // As per design: "truncated or replaced with a placeholder"
+                        // Using a placeholder for clarity.
+                        codeToSend = `[Code content >100 lines, see reference. Original selection was from ${codeCtxPart.fileName}:${codeCtxPart.startLine}-${codeCtxPart.endLine}]`;
+                        logger.info(`ChatProcessor: CodeContextPart from ${codeCtxPart.filePath} has ${lineCount} lines. Truncating for API call.`);
+                    }
+
+                    const serializedText = `// Meta: FilePath="${codeCtxPart.filePath}", LanguageId="${codeCtxPart.languageId}", Lines=${codeCtxPart.startLine}-${codeCtxPart.endLine}\n\`\`\`${codeCtxPart.languageId || ''}\n${codeToSend}\n\`\`\``;
+                    serializedContent.push({
+                        type: 'text',
+                        text: serializedText,
+                    } as TextPart);
+                } else {
+                    // TextPart, ImageContent, Tool parts are passed as is
+                    serializedContent.push(part);
+                }
+            }
+            return { ...msg, content: serializedContent };
+        });
+    }
+
     private async sendChatRequest(sessionId?: string): Promise<Response> {
         console.log("Creating new AbortController for chat request");
         this.abortController = new AbortController();
@@ -334,8 +379,12 @@ export class ChatProcessor {
             throw new Error('API client not available');
         }
 
+        const messagesForApi = this.serializeMessagesForApi(this.currentMessages);
+        console.log("ChatProcessor: Messages prepared for API:", JSON.stringify(messagesForApi.map(m => ({ role: m.role, content: m.content.map(c => c.type === 'text' ? (c as TextPart).text.substring(0,100)+'...' : c.type) }))));
+
+
         const params = {
-            prompt: this.currentMessages,
+            prompt: messagesForApi, // Use serialized messages
             abortController: this.abortController,
             sessionId: sessionId,
             workspaceDirectory: workspaceDirectory,

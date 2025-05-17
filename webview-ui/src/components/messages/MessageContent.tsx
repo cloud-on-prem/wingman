@@ -82,7 +82,14 @@ export const MessageContentRenderer: React.FC<MessageContentProps> = ({ content 
     return (
         <>
             {validItems.map((item, index) => {
+                // Ensure item and item.type are valid before proceeding
+                if (!item || !item.type) {
+                    console.warn('MessageContentRenderer: Encountered an item without a type or null item at index', index, item);
+                    return null; 
+                }
+
                 if (item.type === 'text') {
+                    // const textItem = item as import('../../types').TextContent; // No cast needed, item is already narrowed by item.type
                     // If the text is empty, show generating message
                     if (!item.text || item.text.trim() === '') {
                         return (
@@ -93,15 +100,15 @@ export const MessageContentRenderer: React.FC<MessageContentProps> = ({ content 
                     }
 
                     // Check if the content appears to be JSON data that needs parsing
-                    let textContent = item.text;
-                    if (typeof textContent === 'string' && textContent.trim().startsWith('data:')) {
+                    let textContentToRender = item.text; // Use item.text directly
+                    if (typeof textContentToRender === 'string' && textContentToRender.trim().startsWith('data:')) {
                         try {
                             // Extract the JSON part
-                            const jsonMatch = textContent.match(/data:\s*(\{.*\})/);
+                            const jsonMatch = textContentToRender.match(/data:\s*(\{.*\})/);
                             if (jsonMatch && jsonMatch[1]) {
                                 const jsonData = JSON.parse(jsonMatch[1]);
                                 if (jsonData.message && typeof jsonData.message === 'string') {
-                                    textContent = jsonData.message;
+                                    textContentToRender = jsonData.message;
                                 }
                             }
                         } catch (e) {
@@ -155,17 +162,45 @@ export const MessageContentRenderer: React.FC<MessageContentProps> = ({ content 
                                     }
                                 }}
                             >
-                                {textContent}
+                                {textContentToRender}
                             </ReactMarkdown>
                         </div>
                     );
-                } else if (item.type === 'image' && 'url' in item) {
+                } else if (item.type === 'code_context') {
+                    // const codeContextItem = item as import('../../types').CodeContextPart; // No cast needed
+                    const blockId = `code-context-${index}-${item.fileName}-${item.startLine}`;
+                    const isCopied = copiedCodeBlock === blockId;
+                    const languageClass = item.languageId ? `language-${item.languageId}` : '';
+
+                    return (
+                        <div key={`code-context-${index}`} className="message-code-context">
+                            <div className="code-context-header">
+                                <span className="code-context-filename">
+                                    {item.fileName}:{item.startLine}-{item.endLine}
+                                    {item.languageId && ` (${item.languageId})`}
+                                </span>
+                                <button
+                                    className={`code-block-copy ${isCopied ? 'copied' : ''}`}
+                                    onClick={() => handleCopyCode(item.selectedText, blockId)}
+                                    title="Copy code"
+                                >
+                                    <i className={`codicon ${isCopied ? 'codicon-check' : 'codicon-copy'}`}></i>
+                                </button>
+                            </div>
+                            <CodeBlock className={languageClass}>
+                                {item.selectedText}
+                            </CodeBlock>
+                        </div>
+                    );
+                } else if (item.type === 'image') {
+                    // const imageItem = item as import('../../types').ImageContent; // No cast needed
                     return (
                         <div key={index} className="message-image">
                             <img src={item.url} alt="Generated" />
                         </div>
                     );
-                } else if (item.type === 'action' && 'action' in item) {
+                } else if (item.type === 'action') {
+                    // const actionItem = item as import('../../types').ActionContent; // No cast needed
                     // If action is for restarting server, show appropriate status
                     const isRestartAction = item.action === 'restart-server';
 
@@ -205,6 +240,8 @@ export const MessageContentRenderer: React.FC<MessageContentProps> = ({ content 
                         </div>
                     );
                 }
+                // Log unhandled item types for debugging, but don't render them to avoid errors
+                console.warn('MessageContentRenderer: Unhandled item type or structure at index', index, item);
                 return null;
             })}
         </>
