@@ -2,6 +2,10 @@ import { EventEmitter } from 'events';
 import { ServerManager } from '../serverManager';
 import { Message } from '../../types';
 import * as vscode from 'vscode';
+import { logger as singletonLogger } from '../../utils/logger'; // Import singletonLogger
+
+// Create a logger instance for this module
+const logger = singletonLogger.createSource('SessionManager');
 
 export interface SessionMetadata {
     id: string;
@@ -130,15 +134,27 @@ export class SessionManager {
      * Load a specific session by ID
      */
     public async loadSession(sessionId: string): Promise<Session | null> {
+        // Optimistic update can be removed if SESSION_LOADED is consistently emitted with full data later
+        // this.eventEmitter.emit(SessionEvents.SESSION_LOADED, { sessionId, messages: [] }); 
+        logger.info(`Loading session: ${sessionId}`);
         try {
             const apiClient = this.serverManager.getApiClient();
             if (!apiClient || !this.serverManager.isReady()) {
-                console.error(`Cannot load session ${sessionId}: Server not ready`);
+                logger.error(`Cannot load session ${sessionId}: Server or API client not ready.`);
+                this.emit(SessionEvents.ERROR, new Error('Server not ready for loading session'));
                 return null;
             }
 
             try {
+                // logger.debug(`Attempting to fetch session history via apiClient for ID: ${sessionId}`);
                 const session = await apiClient.getSessionHistory(sessionId);
+                // logger.info(`Successfully fetched session history for ID: ${sessionId}. Message count: ${session?.messages?.length}`);
+                
+                if (!session) {
+                    logger.warn(`Session history not found by API for ID: ${sessionId}`);
+                    this.emit(SessionEvents.ERROR, new Error(`Session ${sessionId} not found by API.`));
+                    return null;
+                }
 
                 // Make sure the session has a title property
                 if (!session.metadata.title && session.metadata.description) {
@@ -147,14 +163,17 @@ export class SessionManager {
 
                 this.currentSessionId = sessionId;
                 this.currentSession = session;
-                this.emit(SessionEvents.SESSION_LOADED, session);
+                this.emit(SessionEvents.SESSION_LOADED, session); 
+                // logger.debug(`Emitted SESSION_LOADED for ${sessionId} with full data.`);
                 return session;
             } catch (error) {
-                console.error(`Error loading session ${sessionId} from API:`, error);
+                logger.error(`Error loading session ${sessionId} from API:`, error);
+                this.emit(SessionEvents.ERROR, error);
                 return null;
             }
         } catch (error) {
-            console.error(`Error in loadSession ${sessionId}:`, error);
+            logger.error(`General error in loadSession ${sessionId}:`, error);
+            this.emit(SessionEvents.ERROR, error);
             return null;
         }
     }

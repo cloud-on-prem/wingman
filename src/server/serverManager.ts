@@ -32,7 +32,8 @@ export enum ServerStatus {
     STOPPED = 'stopped',
     STARTING = 'starting',
     RUNNING = 'running',
-    ERROR = 'error'
+    ERROR = 'error',
+    STOPPING = 'stopping' // Add STOPPING state
 }
 
 /**
@@ -191,28 +192,46 @@ export class ServerManager {
             this.serverInfo = await this.startGoosedFn(serverConfig);
 
             // Set up process exit handler
-            this.serverInfo.process.on('close', (code) => { // code can be number or null
-                this.logger.info(`Server process exited with code ${code === null ? 'null (signal)' : code}`);
-                const wasRunningAndFullyStarted = this.serverFullyStarted;
+            this.serverInfo.process.on('close', (code, signal) => { 
+                const exitReason = signal ? `signal ${signal}` : `code ${code}`;
+                this.logger.warn(`[ServerManager] 'close' event on server process: Process exited due to ${exitReason}.`);
                 
-                this.serverInfo = null; // Clean up server info
-                this.apiClient = null;  // Clean up API client
-                this.serverFullyStarted = false; // Reset flag
-                this.configLoadAttempted = false; // Allow re-loading config on next start or restart
+                const wasRunningAndFullyStarted = this.serverFullyStarted;
+                const previousStatus = this.status;
 
-                if (code !== null && code !== 0) { // Exited with a specific error code
-                    this.logger.error(`Server process exited with specific error code: ${code}. Setting status to ERROR.`);
+                this.serverInfo = null; 
+                this.apiClient = null;  
+                this.serverFullyStarted = false; 
+                this.configLoadAttempted = false; 
+
+                if (previousStatus === ServerStatus.STOPPING || previousStatus === ServerStatus.STOPPED) {
+                    this.logger.info(`[ServerManager] Server process exited during or after a stop sequence. Current status: ${previousStatus}. Final status: STOPPED.`);
+                    this.setStatus(ServerStatus.STOPPED);
+                } else if (code !== null && code !== 0) { 
+                    this.logger.error(`[ServerManager] Server process exited unexpectedly with error code: ${code}. Previous status: ${previousStatus}. Setting status to ERROR.`);
                     this.setStatus(ServerStatus.ERROR);
-                } else if (code === null || !wasRunningAndFullyStarted) { 
-                    // Exited due to a signal (code is null) OR exited with 0 but before full startup
-                    const reason = code === null ? "due to a signal" : "cleanly (code 0) but before full startup";
-                    this.logger.warn(`Server process exited ${reason}. Setting status to ERROR.`);
+                } else if (signal) { 
+                    this.logger.warn(`[ServerManager] Server process exited unexpectedly due to signal: ${signal}. Previous status: ${previousStatus}. Setting status to ERROR.`);
+                    this.setStatus(ServerStatus.ERROR);
+                } else if (!wasRunningAndFullyStarted) {
+                     this.logger.warn(`[ServerManager] Server process exited (code 0) but was not fully started. Previous status: ${previousStatus}. Setting status to ERROR.`);
                     this.setStatus(ServerStatus.ERROR);
                 } else { // code === 0 AND wasRunningAndFullyStarted
-                    this.logger.info('Server process exited cleanly after being fully started. Setting status to STOPPED.');
+                    this.logger.info(`[ServerManager] Server process exited cleanly (code 0) after being fully started. Previous status: ${previousStatus}. Setting status to STOPPED.`);
                     this.setStatus(ServerStatus.STOPPED);
                 }
-                this.eventEmitter.emit(ServerEvents.SERVER_EXIT, code);
+                this.eventEmitter.emit(ServerEvents.SERVER_EXIT, code ?? signal); // Emit code or signal
+            });
+
+            this.serverInfo.process.on('error', (err) => {
+                this.logger.error('[ServerManager] Error event on server process:', err);
+                // This might indicate a failure to spawn or an OS-level error with the process
+                this.serverFullyStarted = false;
+                this.configLoadAttempted = false;
+                if (this.status !== ServerStatus.STOPPED && this.status !== ServerStatus.ERROR) {
+                    this.setStatus(ServerStatus.ERROR);
+                }
+                this.eventEmitter.emit(ServerEvents.ERROR, err);
             });
 
             // Create API client for the server
@@ -304,9 +323,10 @@ export class ServerManager {
      * Stop the Goose server
      */
     public stop(): void {
-        if (this.serverInfo?.process) {
-            this.logger.info('Stopping Goose server');
-            this.serverFullyStarted = false; // Mark as not fully started during stop sequence
+        if (this.serverInfo?.process && this.status !== ServerStatus.STOPPING && this.status !== ServerStatus.STOPPED) {
+            this.logger.info(`[ServerManager] stop() called. Current status: ${this.status}. Setting status to STOPPING.`);
+            this.setStatus(ServerStatus.STOPPING); // Indicate we are in the process of stopping
+            this.serverFullyStarted = false; 
 
             try {
                 if (process.platform === 'win32' && this.serverInfo.process.pid) {

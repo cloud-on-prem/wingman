@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, RefObject } from 'react'; // Combined imports
 import { getVSCodeAPI } from '../utils/vscode';
-import { MessageType } from '../types'; // Keep this import
+import { MessageType } from '@common-types/index'; // Corrected import path
 import { SessionMetadata } from '../components/SessionList';
 
 interface UseSessionManagementResult {
@@ -49,7 +49,7 @@ export const useSessionManagement = (
             return;
         }
 
-        console.log(`Switching to session: ${sessionId}`);
+        // console.log(`[useSessionManagement] handleSessionSelect: Attempting to switch to session ID: ${sessionId}`); // Removed log
         vscode.postMessage({
             command: MessageType.SWITCH_SESSION,
             sessionId: sessionId
@@ -107,12 +107,12 @@ export const useSessionManagement = (
 
         // Add listener on mount/when drawer opens
         document.addEventListener('mousedown', handleClickOutside);
-        console.log('Added click outside listener'); // Debug log
+        // console.log('Added click outside listener'); // Debug log
 
         // Cleanup listener on unmount/when drawer closes
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
-            console.log('Removed click outside listener'); // Debug log
+            // console.log('Removed click outside listener'); // Debug log
         };
     }, [showSessionDrawer, drawerRef, toggleButtonRef]); // Dependencies include refs
 
@@ -128,7 +128,7 @@ export const useSessionManagement = (
                 case MessageType.SESSIONS_LIST:
                     // Handle sessions list
                     if (message.sessions) {
-                        console.log('Received sessions list:', message.sessions);
+                        // console.log('Received sessions list:', message.sessions);
                         // Ensure we're setting an array and validate session data structure
                         const validSessions = Array.isArray(message.sessions)
                             ? message.sessions.filter((session: any) =>
@@ -139,15 +139,15 @@ export const useSessionManagement = (
                                 typeof session.metadata === 'object')
                             : [];
 
-                        console.log('Valid sessions after filtering:', validSessions.length);
+                        // console.log('Valid sessions after filtering:', validSessions.length);
                         setSessions(validSessions);
                     }
                     break;
                 case MessageType.SESSION_LOADED:
-                case 'sessionLoaded':
+                // case 'sessionLoaded': // Removed as it's likely a typo/old code
                     // Handle session loaded event
                     if (message.sessionId) {
-                        console.log('Loaded session:', message.sessionId);
+                        // console.log('Loaded session:', message.sessionId);
                         setCurrentSessionId(message.sessionId);
                     }
                     break;

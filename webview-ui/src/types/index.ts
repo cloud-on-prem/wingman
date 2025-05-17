@@ -27,7 +27,8 @@ export enum MessageType {
     FOCUS_CHAT_INPUT = 'focusChatInput',
     OPEN_SETTINGS_FILE = 'openSettingsFile', // Added for opening settings
     SET_THEME = 'setTheme', // Added for Shiki theme synchronization
-    WEBVIEW_READY = 'webviewReady' // Added for webview readiness check
+    WEBVIEW_READY = 'webviewReady', // Added for webview readiness check
+    SET_EXTENSION_VERSION = 'setExtensionVersion' // Added for passing extension version to webview
 }
 
 // Type for code references

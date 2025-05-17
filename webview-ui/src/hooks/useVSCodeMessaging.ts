@@ -53,6 +53,10 @@ interface UseVSCodeMessagingResult {
     // Remove clearPrependedCode as it's no longer needed
     // clearPrependedCode: () => void;
     shikiTheme: string; // Added state for shiki theme
+    extensionVersion: string; // Added for extension version
+    resources: {
+        gooseIcon?: string; // URI for the goose icon
+    }; // Resources received from extension
 }
 
 // Define a type for the temporary reference used for prepended code
@@ -78,6 +82,8 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
     // const [prependedCode, setPrependedCode] = useState<PrependedCode | null>(null);
     const [processedMessageIds, setProcessedMessageIds] = useState<Set<string>>(new Set());
     const [shikiTheme, setShikiTheme] = useState<string>('dark-plus'); // Default theme
+    const [extensionVersion, setExtensionVersion] = useState<string>(''); // Extension version state
+    const [resources, setResources] = useState<{ gooseIcon?: string }>({});
 
     // Remove derived state and clear function
     // const hasPrependedCode = prependedCode !== null;
@@ -378,18 +384,18 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
                         setServerStatus(message.status);
 
                         // Show server back up message if appropriate
-                        if (wasDown && isNowRunning) {
-                            const serverUpMessage: ExtendedMessage = {
-                                id: `server_up_${Date.now()}`,
-                                role: 'system',
-                                created: Date.now(),
-                                content: [{
-                                    type: 'text',
-                                    text: 'Goose server is now connected and ready.'
-                                }]
-                            };
-                            safeguardedSetMessages(prev => [...prev, serverUpMessage]);
-                        }
+                        // if (wasDown && isNowRunning) { // REMOVED: System message for server connection
+                        //     const serverUpMessage: ExtendedMessage = {
+                        //         id: `server_up_${Date.now()}`,
+                        //         role: 'system',
+                        //         created: Date.now(),
+                        //         content: [{
+                        //             type: 'text',
+                        //             text: 'Goose server is now connected and ready.'
+                        //         }]
+                        //     };
+                        //     safeguardedSetMessages(prev => [...prev, serverUpMessage]);
+                        // }
                     }
                     break;
                 case MessageType.SERVER_EXIT:
@@ -487,9 +493,27 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
                         setShikiTheme(message.theme);
                     }
                     break;
+                case MessageType.SET_EXTENSION_VERSION:
+                    if (message.version && typeof message.version === 'string') {
+                        console.log('Received extension version:', message.version);
+                        setExtensionVersion(message.version);
+                    }
+                    break;
+                case MessageType.RESOURCES_READY:
+                    if (message.resources && typeof message.resources === 'object') {
+                        console.log('Received resources from extension:', message.resources);
+                        setResources(message.resources);
+                    }
+                    break;
+                // Add cases for messages handled by other hooks to prevent "Unknown message type" logs
+                case MessageType.SESSIONS_LIST:
+                case MessageType.SESSION_LOADED:
+                    // These are handled by useSessionManagement, so we can ignore them here.
+                    // console.debug(`[useVSCodeMessaging] Ignoring message type ${message.command}, handled elsewhere.`);
+                    break;
                 default:
                     // Handle unknown message types
-                    console.warn('Unknown message type:', message.command);
+                    console.warn('[useVSCodeMessaging] Unknown message type:', message.command, message);
             }
         };
 
@@ -515,6 +539,25 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
         messages
     ]);
 
+    // Effect to re-fetch server status when webview becomes visible
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                // console.log('[useVSCodeMessaging] Webview became visible, requesting server status.');
+                vscode.postMessage({ command: MessageType.GET_SERVER_STATUS });
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        // The initial server status is already sent by the extension
+        // in response to WEBVIEW_READY. This listener is specifically for
+        // when the tab visibility changes *after* initial load.
+
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, [vscode]); // vscode is stable, so this effect runs once on mount to set up the listener
+
     return {
         messages,
         serverStatus,
@@ -529,6 +572,8 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
         stopGeneration,
         restartServer,
         // clearPrependedCode
-        shikiTheme // Export the theme state
+        shikiTheme, // Export the theme state
+        extensionVersion, // Export the extension version
+        resources // Export the resources
     };
 };

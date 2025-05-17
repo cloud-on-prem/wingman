@@ -5,6 +5,7 @@ import { Header } from './components/Header';
 import { SessionList } from './components/SessionList';
 import MessageList from './components/messages/MessageList';
 import { ChatInput } from './components/input/ChatInput';
+import { WelcomeView } from './components/welcome/WelcomeView';
 
 // Import hooks
 import { useVSCodeMessaging } from './hooks/useVSCodeMessaging';
@@ -37,6 +38,9 @@ const App: React.FC = () => {
         stopGeneration,
         restartServer,
         // clearPrependedCode 
+        shikiTheme,
+        extensionVersion,
+        resources
     } = useVSCodeMessaging();
 
     // Log messages when they change - with error handling
@@ -61,7 +65,8 @@ const App: React.FC = () => {
         handleSessionSelect,
         handleCreateSession,
         toggleSessionDrawer,
-        currentSession
+        currentSession,
+        fetchSessions
     } = useSessionManagement(isLoading, sessionDrawerRef, sessionToggleButtonRef); // Pass refs to the hook
 
     // Handler for opening the settings file
@@ -150,6 +155,20 @@ const App: React.FC = () => {
         vscode.postMessage({ command: MessageType.WEBVIEW_READY });
         console.log('App: Sent WEBVIEW_READY to extension host.');
     }, []);
+    
+    // Fetch sessions on initial load for the welcome screen
+    useEffect(() => {
+        // Fetch sessions on component mount to populate welcome screen
+        // Adding a small delay to allow the backend to fully initialize
+        const timer = setTimeout(() => {
+            fetchSessions();
+        }, 1500); // Delay of 1.5 seconds
+
+        return () => clearTimeout(timer); // Cleanup timer on unmount
+    }, [fetchSessions]);
+
+    // Determine whether to show the welcome screen or chat interface
+    const showWelcomeScreen = messages.length === 0 && !currentSession;
 
     return (
         <div className="container">
@@ -175,34 +194,42 @@ const App: React.FC = () => {
                 </div>
             )}
 
-            {/* Removed the duplicated block below */}
-            <div className="message-container">
-                <MessageList
-                    messages={messages}
+            {showWelcomeScreen ? (
+                <WelcomeView
+                    extensionVersion={extensionVersion}
+                    onSessionSelect={handleSessionSelect}
+                    sessions={sessions}
                     isLoading={isLoading}
-                    copiedMessageId={copiedMessageId}
-                    intermediateText={intermediateText}
-                    serverStatus={serverStatus}
-                    onCopyMessage={handleCopyMessage}
-                    onStopGeneration={stopGeneration}
-                    restartServer={restartServer}
+                    onCreateSession={handleCreateSession}
+                    gooseIcon={resources.gooseIcon}
+                    onToggleSessionDrawer={toggleSessionDrawer} // Pass the handler
                 />
-            </div>
+            ) : (
+                <>
+                    <div className="message-container">
+                        <MessageList
+                            messages={messages}
+                            isLoading={isLoading}
+                            copiedMessageId={copiedMessageId}
+                            intermediateText={intermediateText}
+                            serverStatus={serverStatus}
+                            onCopyMessage={handleCopyMessage}
+                            onStopGeneration={stopGeneration}
+                            restartServer={restartServer}
+                        />
+                    </div>
 
-            <ChatInput
-                inputMessage={inputMessage}
-                codeReferences={codeReferences}
-                isLoading={isLoading}
-                // Remove prependedCode related props
-                // prependedCode={prependedCode} 
-                // hasPrependedCode={hasPrependedCode} 
-                onInputChange={setInputMessage}
-                onSendMessage={handleSendMessage}
-                onStopGeneration={stopGeneration}
-                onRemoveCodeReference={handleRemoveCodeReference}
-                // Remove onClearPrependedCode prop
-                // onClearPrependedCode={clearPrependedCode} 
-            />
+                    <ChatInput
+                        inputMessage={inputMessage}
+                        codeReferences={codeReferences}
+                        isLoading={isLoading}
+                        onInputChange={setInputMessage}
+                        onSendMessage={handleSendMessage}
+                        onStopGeneration={stopGeneration}
+                        onRemoveCodeReference={handleRemoveCodeReference}
+                    />
+                </>
+            )}
         </div>
     );
 };

@@ -18,6 +18,8 @@ import { MessageType } from './common-types';
 import { getConfigFilePath } from './utils/configReader';
 // Import the new logger singleton
 import { logger } from './utils/logger';
+// Import version utility
+import { getExtensionVersion } from './utils/versionUtils';
 
 // Create logger for the extension
 // const logger = getLogger('Extension'); // OLD LOGGER REMOVED
@@ -80,8 +82,8 @@ export class GooseViewProvider implements vscode.WebviewViewProvider {
 		webviewView: vscode.WebviewView,
 		context: vscode.WebviewViewResolveContext,
 		_token: vscode.CancellationToken
- 	) {
- 		this._view = webviewView;
+	) {
+		this._view = webviewView;
 
 		// --- Detect and Map Theme ---
 		const activeTheme = vscode.window.activeColorTheme;
@@ -92,10 +94,11 @@ export class GooseViewProvider implements vscode.WebviewViewProvider {
 		webviewView.webview.options = {
 			// Enable scripts in the webview
 			enableScripts: true,
-			// Restrict the webview to only load resources from the `out` directory
+			// Restrict the webview to only load resources from allowed directories
 			localResourceRoots: [
-				vscode.Uri.joinPath(this._extensionUri, 'out'),
-				vscode.Uri.joinPath(this._extensionUri, 'webview-ui/dist')
+				vscode.Uri.joinPath(this._extensionUri, 'out'), // For extension's JS/CSS
+				vscode.Uri.joinPath(this._extensionUri, 'webview-ui/dist'), // For webview's JS/CSS
+				vscode.Uri.joinPath(this._extensionUri, 'resources') // For images and other static assets
 			]
 		};
 
@@ -114,10 +117,36 @@ export class GooseViewProvider implements vscode.WebviewViewProvider {
 			this.messageQueue = []; // Clear any pending messages
 		});
 
+		// --- Add onDidChangeVisibility listener ---
+		webviewView.onDidChangeVisibility(() => {
+			if (this._view && this._view.visible) {
+				logger.debug('[GooseViewProvider] Webview became visible. Re-syncing state.');
+				this.isWebviewReady = true; 
+				
+				const currentStatus = this._serverManager.getStatus();
+				this.postMessage({ command: MessageType.SERVER_STATUS, status: currentStatus });
+				this.lastSentStatus = currentStatus;
+
+				this._processMessageQueue();
+
+				const gooseIconUri = this._view?.webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'resources', 'goose-icon.png'));
+				this.postMessage({ command: MessageType.RESOURCES_READY, resources: { gooseIcon: gooseIconUri?.toString() } });
+				
+				this.postMessage({ command: MessageType.SET_EXTENSION_VERSION, version: getExtensionVersion() });
+				
+				const activeTheme = vscode.window.activeColorTheme;
+				this.postMessage({ command: MessageType.SET_THEME, theme: this.getShikiTheme(activeTheme.kind) });
+			} else {
+				logger.debug('[GooseViewProvider] Webview became hidden.');
+			}
+		});
+		// --- End onDidChangeVisibility listener ---
+
 		// Set up event listeners for server status changes
 		this._serverManager.on(ServerEvents.STATUS_CHANGE, (newStatus: ServerStatus) => {
 			if (newStatus !== this.lastSentStatus) {
-				this.postMessage({ // Use the new postMessage method
+				// logger.debug(`Server status changed to ${newStatus}. Last sent was ${this.lastSentStatus}. Sending update.`);
+				this.postMessage({ 
 					command: MessageType.SERVER_STATUS,
 					status: newStatus
 				});
@@ -153,13 +182,13 @@ export class GooseViewProvider implements vscode.WebviewViewProvider {
 
 		// Send initial messages (will be queued if webview is not ready yet)
 		const initialStatus = this._serverManager.getStatus();
-		this.postMessage({ // Use the new postMessage method
+		this.postMessage({
 			command: MessageType.SERVER_STATUS,
 			status: initialStatus
 		});
-		this.lastSentStatus = initialStatus; // Set lastSentStatus based on initial post
+		this.lastSentStatus = initialStatus;
 
-		this.postMessage({ // Use the new postMessage method
+		this.postMessage({
 			command: MessageType.SET_THEME,
 			theme: shikiTheme
 		});
@@ -171,6 +200,28 @@ export class GooseViewProvider implements vscode.WebviewViewProvider {
 				logger.info('Webview is ready. Processing message queue.');
 				this.isWebviewReady = true;
 				this._processMessageQueue();
+
+				// Send extension version to webview
+				const extensionVersion = getExtensionVersion();
+				logger.info(`Sending extension version to webview: ${extensionVersion}`);
+				this.postMessage({
+					command: MessageType.SET_EXTENSION_VERSION,
+					version: extensionVersion
+				});
+				
+				// Create and send proper webview URIs for resources
+				const gooseIconUri = this._view?.webview.asWebviewUri(
+					vscode.Uri.joinPath(this._extensionUri, 'resources', 'goose-icon.png')
+				);
+				logger.info(`Generated webview URI for goose-icon.png: ${gooseIconUri}`);
+				this.postMessage({
+					command: MessageType.RESOURCES_READY,
+					resources: {
+						gooseIcon: gooseIconUri?.toString()
+					}
+				});
+				// Explicitly ensuring no SESSIONS_LIST is sent here.
+				// Webview initiates session fetching via GET_SESSIONS.
 				break;
 
 			case MessageType.HELLO:
@@ -458,6 +509,7 @@ export class GooseViewProvider implements vscode.WebviewViewProvider {
 				break;
 
 			case MessageType.GET_SERVER_STATUS:
+				// logger.debug(`Received GET_SERVER_STATUS from webview. Current actual status: ${this._serverManager.getStatus()}. Sending.`);
 				this.postMessage({
 					command: MessageType.SERVER_STATUS,
 					status: this._serverManager.getStatus()
@@ -850,15 +902,17 @@ export function activate(context: vscode.ExtensionContext) {
 		try {
 			logger.info('Executing command: goose.listSessions');
 			const sessions = await sessionManager.fetchSessions();
-			if (provider) {
-				// Use the new postMessage method
-				provider.postMessage({
-					command: MessageType.SESSIONS_LIST,
-					sessions
-				});
-			}
+			// Sessions are fetched and cached.
+			// The webview will request the list via GET_SESSIONS when it needs it.
+			// No need to proactively push to the webview here.
+			// if (provider) {
+			// provider.postMessage({
+			// command: MessageType.SESSIONS_LIST,
+			// sessions
+			// });
+			// }
 		} catch (error) {
-			logger.error('Error listing sessions:', error);
+			logger.error('Error executing goose.listSessions command:', error);
 			vscode.window.showErrorMessage(`Failed to list sessions: ${error}`);
 		}
 	});
