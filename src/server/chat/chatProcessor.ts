@@ -79,14 +79,6 @@ export class ChatProcessor {
             return;
         }
 
-
-        console.log("--- ChatProcessor.sendMessage Start ---");
-        console.log("Received text:", text);
-        console.log("Received codeReferencesParam:", JSON.stringify(codeReferencesParam));
-        console.log("Received prependedCode:", JSON.stringify(prependedCode));
-        console.log("Received messageId:", messageId);
-        console.log("Received sessionId:", sessionId);
-
         let effectiveSessionId: string | undefined = sessionId;
 
         if (!effectiveSessionId && this.sessionManager) {
@@ -95,8 +87,6 @@ export class ChatProcessor {
                 effectiveSessionId = currentSessionId;
             }
         }
-
-        console.log("Using session ID:", effectiveSessionId || "none (creating new session)");
 
         const userMessageContent: MessageContent[] = [];
 
@@ -155,21 +145,6 @@ export class ChatProcessor {
             return;
         }
 
-        console.log("Constructed userMessageContent parts:", userMessageContent.length);
-        userMessageContent.forEach((part, index) => {
-            if (part.type === 'text') {
-                console.log(`Content part ${index + 1} (TextPart):`, part.text.substring(0, 100) + '...');
-            } else if (part.type === 'code_context') {
-                console.log(`Content part ${index + 1} (CodeContextPart) from ${part.fileName}:${part.startLine}-${part.endLine}:`, part.selectedText.substring(0,100) + '...');
-            } else if (part.type === 'image') {
-                console.log(`Content part ${index + 1} (ImageContent): mimeType: ${part.mimeType}, data length: ${part.data.length}`);
-            } else {
-                 // This case should ideally not be hit with current MessageContent types
-                console.log(`Content part ${index + 1}: Unknown part type`, part);
-            }
-        });
-
-
         const userMessage: Message = {
             id: messageId || `user_${Date.now()}`,
             role: 'user',
@@ -178,14 +153,10 @@ export class ChatProcessor {
         };
 
         this.currentMessages.push(userMessage); // This will be used for API serialization later
-        console.log("Added user message to conversation, total messages:", this.currentMessages.length);
-
         this.shouldStop = false;
 
         try {
-            console.log("Sending chat request to server...");
             const response = await this.sendChatRequest(effectiveSessionId);
-            console.log("Got response from server, status:", response.status);
 
             // If this was a new session, load the session info after sending the first message
             if (!effectiveSessionId && this.sessionManager) {
@@ -200,7 +171,6 @@ export class ChatProcessor {
             }
 
             const aiMessageId = `ai_${Date.now()}`;
-            console.log("Created AI message ID:", aiMessageId);
 
             // Ensure the response body is available
             if (!response.body) {
@@ -208,7 +178,6 @@ export class ChatProcessor {
             }
 
             const reader = response.body.getReader();
-            console.log("Created reader for response body");
             const decoder = new TextDecoder();
             let accumulatedData = '';
 
@@ -220,25 +189,21 @@ export class ChatProcessor {
             };
 
             this.currentMessages.push(aiMessage);
-            console.log("Added AI message placeholder to conversation, total messages:", this.currentMessages.length);
-            // Consider emitting an initial MESSAGE_RECEIVED here if a placeholder UI is desired immediately
-            // this.emit(ChatEvents.MESSAGE_RECEIVED, { ...aiMessage });
+            // this.emit(ChatEvents.MESSAGE_RECEIVED, { ...aiMessage }); // Placeholder emission
 
-            console.log("Starting to read streaming response...");
             while (true) {
                 if (this.shouldStop) {
-                    console.log("Stopping generation (shouldStop flag is true)");
+                    logger.info("Stopping generation (shouldStop flag is true)");
                     reader.cancel();
-                    this.emit(ChatEvents.FINISH, { ...aiMessage }, 'stopped'); 
+                    this.emit(ChatEvents.FINISH, { ...aiMessage }, 'stopped');
                     break;
                 }
 
-                console.log("Reading chunk from stream...");
                 const { value, done } = await reader.read();
 
                 if (done) {
-                    console.log("Stream complete, emitting FINISH event");
-                    this.emit(ChatEvents.FINISH, { ...aiMessage }, 'complete'); 
+                    logger.info("Stream complete, emitting FINISH event");
+                    this.emit(ChatEvents.FINISH, { ...aiMessage }, 'complete');
                     break;
                 }
 
@@ -369,7 +334,6 @@ export class ChatProcessor {
     }
 
     private async sendChatRequest(sessionId?: string): Promise<Response> {
-        console.log("Creating new AbortController for chat request");
         this.abortController = new AbortController();
 
         const workspaceDirectory = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
@@ -380,8 +344,7 @@ export class ChatProcessor {
         }
 
         const messagesForApi = this.serializeMessagesForApi(this.currentMessages);
-        console.log("ChatProcessor: Messages prepared for API:", JSON.stringify(messagesForApi.map(m => ({ role: m.role, content: m.content.map(c => c.type === 'text' ? (c as TextPart).text.substring(0,100)+'...' : c.type) }))));
-
+        // Removed verbose logging of API messages
 
         const params = {
             prompt: messagesForApi, // Use serialized messages

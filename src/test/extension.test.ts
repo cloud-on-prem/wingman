@@ -395,11 +395,14 @@ suite('Extension Test Suite', () => {
 
         test('should send PREPARE_MESSAGE_WITH_CODE for valid selection < limit', async () => {
             const selectionText = 'console.log("selected");';
+            // Update expectedPayload to match the CodeReference structure
             const expectedPayload = {
-                content: selectionText,
+                id: sinon.match.string, // ID is generated with Date.now()
+                filePath: '/mock/test.ts', // fsPath usually prepends a slash for Uri.file
                 fileName: 'test.ts',
+                selectedText: selectionText, // Changed from content
                 languageId: 'typescript',
-                startLine: 5, // Example line numbers
+                startLine: 5,
                 endLine: 5
             };
             const testSelectionRange = new vscode.Selection(

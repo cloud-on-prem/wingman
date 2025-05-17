@@ -801,15 +801,19 @@ export async function handleAskAboutSelectionCommand(
 				vscode.window.showInformationMessage('Selected text is empty or contains only whitespace.');
 				return;
 			}
+			// Construct a full CodeReference object for the prepayload
+			const filePath = document.uri.fsPath;
+			const fileName = path.basename(filePath);
 			prepayloadToSend = {
-				content: selectedText,
-				fileName: path.basename(document.fileName),
+				id: `${fileName}-${selection.start.line + 1}-${selection.end.line + 1}-${Date.now()}`, // Generate an ID
+				filePath: filePath,
+				fileName: fileName,
+				selectedText: selectedText, // Use selectedText instead of content
 				languageId: document.languageId,
-				// Add line numbers to the payload
-				startLine: selection.start.line + 1, // VS Code lines are 0-based, display is 1-based
+				startLine: selection.start.line + 1,
 				endLine: selection.end.line + 1
-			};
-			logger.info(`Selection < ${SELECTION_LINE_LIMIT_FOR_PREPEND} lines (${prepayloadToSend.startLine}-${prepayloadToSend.endLine}), preparing message with code.`);
+			} as CodeReference; // Cast to CodeReference to ensure all fields are there
+			logger.info(`Selection < ${SELECTION_LINE_LIMIT_FOR_PREPEND} lines (${prepayloadToSend.startLine}-${prepayloadToSend.endLine}), preparing message with code (as CodeReference).`);
 			actionTaken = true;
 		}
 	}
