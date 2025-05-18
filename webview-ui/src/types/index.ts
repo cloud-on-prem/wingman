@@ -27,7 +27,8 @@ export enum MessageType {
     FOCUS_CHAT_INPUT = 'focusChatInput',
     OPEN_SETTINGS_FILE = 'openSettingsFile', // Added for opening settings
     SET_THEME = 'setTheme', // Added for Shiki theme synchronization
-    WEBVIEW_READY = 'webviewReady' // Added for webview readiness check
+    WEBVIEW_READY = 'webviewReady', // Added for webview readiness check
+    SET_EXTENSION_VERSION = 'setExtensionVersion' // Added for passing extension version to webview
 }
 
 // Type for code references
@@ -59,21 +60,35 @@ export interface VSCodeAPI {
     setState: (state: any) => void;
 }
 
-// Re-export Message type from shared types
-export type { Message } from '../../../src/common-types/index'; // Re-added with correct path
+// Re-export Message type from the primary source in src/types
+// This ensures the webview uses the same comprehensive Message structure as the backend,
+// including TextPart, CodeContextPart, and tool-related content parts.
+export type { Message, Role as MessageRole, TextPart, CodeContextPart as WebviewCodeContextPart, ImageContent as WebviewImageContent, MessageContent as WebviewMessageContentSource } from '../../../src/types/messages';
 
-// Export TextContent and MessageContent types
-// Note: These might differ slightly from the shared SimpleContent if webview needs specific handling
+// Define Webview-specific types, aligning with or extending backend types where necessary.
+
+// TextContent for webview (aligns with TextPart from backend)
 export interface TextContent {
     type: 'text';
     text: string;
+    // annotations?: Record<string, unknown>; // annotations not currently used in webview
 }
 
+// CodeContextPart for webview (aligns with CodeContextPart from backend)
+// It uses the local CodeReference interface.
+export interface CodeContextPart extends CodeReference {
+    type: 'code_context';
+}
+
+// ImageContent for webview
 export interface ImageContent {
     type: 'image';
-    url: string;
+    url: string; // Webview might use URL directly if data is handled by extension
+    // data?: string; // from backend ImageContent
+    // mimeType?: string; // from backend ImageContent
 }
 
+// ActionContent remains webview-specific for now
 export interface ActionContent {
     type: 'action';
     id: string;
@@ -81,4 +96,12 @@ export interface ActionContent {
     action: string;
 }
 
-export type MessageContent = TextContent | ImageContent | ActionContent;
+// Webview's MessageContent union.
+// This should include all types of content parts the webview needs to render.
+export type MessageContent = TextContent | CodeContextPart | ImageContent | ActionContent;
+
+// Note: The re-exported 'Message' from '../../../src/types/messages' will have its
+// 'content' property typed as 'MessageContent[]' from *that* file.
+// The webview's rendering logic (e.g., MessageContentRenderer) will iterate over this array.
+// It's crucial that the 'type' discriminators and structures of parts like
+// TextContent (matching TextPart) and CodeContextPart are compatible.

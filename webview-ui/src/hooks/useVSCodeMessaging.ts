@@ -9,32 +9,35 @@ import { MessageType } from '@common-types/index';
 import {
     Message,
     Role,
-    TextContent,
+    TextPart, // Changed from TextContent
     MessageContent
 } from '@shared/types/messages';
 
 // Extend Message type to include system role and sessionId
 interface ExtendedMessage extends Omit<Message, 'role' | 'content'> {
     role: Role | 'system';
-    content: MessageContent[];
+    content: MessageContent[]; // This MessageContent is from @shared/types/messages
     sessionId?: string | null;
 }
 
-// Helper function to check if content is TextContent
-function isTextContent(content: MessageContent): content is TextContent {
+// Helper function to check if content is TextPart
+function isTextContent(content: MessageContent): content is TextPart { // Changed to TextPart
     return content.type === 'text';
 }
 
 // Unused type, renamed with underscore prefix
 type _MessageHandler = (message: any) => void;
 
-// Interface for prepended code data
-interface PrependedCode {
-    content: string;
+// Interface for prepended code data (aligns with CodeReference from extension)
+// This is what the payload of PREPARE_MESSAGE_WITH_CODE will be.
+interface PrependedCodePayload {
+    id: string;
+    filePath: string;
     fileName: string;
+    selectedText: string;
     languageId: string;
-    startLine: number; // Add start line
-    endLine: number;   // Add end line
+    startLine: number;
+    endLine: number;
 }
 
 interface UseVSCodeMessagingResult {
@@ -53,14 +56,20 @@ interface UseVSCodeMessagingResult {
     // Remove clearPrependedCode as it's no longer needed
     // clearPrependedCode: () => void;
     shikiTheme: string; // Added state for shiki theme
+    extensionVersion: string; // Added for extension version
+    resources: {
+        gooseIcon?: string; // URI for the goose icon
+    }; // Resources received from extension
 }
 
-// Define a type for the temporary reference used for prepended code
+// Define a type for the temporary reference used for prepended code,
+// mirroring the CodeReference structure.
 interface TemporaryPrependedRef {
     id: string;
     isPrepended: true; // Flag to identify this type
-    content: string;
+    filePath: string;
     fileName: string;
+    selectedText: string;
     languageId: string;
     startLine: number;
     endLine: number;
@@ -78,6 +87,8 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
     // const [prependedCode, setPrependedCode] = useState<PrependedCode | null>(null);
     const [processedMessageIds, setProcessedMessageIds] = useState<Set<string>>(new Set());
     const [shikiTheme, setShikiTheme] = useState<string>('dark-plus'); // Default theme
+    const [extensionVersion, setExtensionVersion] = useState<string>(''); // Extension version state
+    const [resources, setResources] = useState<{ gooseIcon?: string }>({});
 
     // Remove derived state and clear function
     // const hasPrependedCode = prependedCode !== null;
@@ -128,40 +139,65 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
             return;
         }
 
-        // Log the session ID for debugging
-        console.log('Sending message with sessionId:', sessionId);
-
         // Create a unique ID for this message
         const messageId = `user_${Date.now()}`;
 
-        // Format code references for display in the UI
-        const content = [];
+        // Construct the content for the user message displayed in the UI
+        // This content should be compatible with MessageContent from '@shared/types/messages'
+        const uiMessageParts: import('@shared/types/messages').MessageContent[] = [];
 
-        // Add the text content if it's not empty
-        if (text.trim()) {
-            content.push({
-                type: 'text',
-                text: text
+        // Find if there's a temporary prepended reference in the state (from PREPARE_MESSAGE_WITH_CODE)
+        const tempPrependedRefFromState = codeReferences.find(ref => ref.isPrepended === true) as TemporaryPrependedRef | undefined;
+
+        if (tempPrependedRefFromState) {
+            uiMessageParts.push({
+                type: 'code_context',
+                id: tempPrependedRefFromState.id,
+                filePath: tempPrependedRefFromState.filePath,
+                fileName: tempPrependedRefFromState.fileName,
+                selectedText: tempPrependedRefFromState.selectedText,
+                languageId: tempPrependedRefFromState.languageId,
+                startLine: tempPrependedRefFromState.startLine,
+                endLine: tempPrependedRefFromState.endLine,
             });
         }
 
-        // Add code references as separate content items
-        if (refs.length > 0) {
-            for (const ref of refs) {
-                content.push({
-                    type: 'text',
-                    text: `From ${ref.fileName}:${ref.startLine}-${ref.endLine}`
+        // Add code references (chips passed in 'refs' argument)
+        // These are from ADD_CODE_REFERENCE, distinct from tempPrependedRefFromState
+        if (refs && refs.length > 0) {
+            for (const chipRef of refs) {
+                // Ensure chipRef is not the same as tempPrependedRef if it somehow got included in 'refs'
+                if (tempPrependedRefFromState && chipRef.id === tempPrependedRefFromState.id && (chipRef as any).isPrepended) {
+                    continue; 
+                }
+                // Assuming chipRef is a CodeReference-like object
+                uiMessageParts.push({
+                    type: 'code_context',
+                    id: chipRef.id,
+                    filePath: chipRef.filePath,
+                    fileName: chipRef.fileName,
+                    selectedText: chipRef.selectedText, 
+                    languageId: chipRef.languageId,
+                    startLine: chipRef.startLine,
+                    endLine: chipRef.endLine,
                 });
             }
         }
-
-        // Create a user message object with all content
+        
+        // Add the text content if it's not empty
+        if (text.trim()) {
+            uiMessageParts.push({
+                type: 'text',
+                text: text.trim(),
+            });
+        }
+        
         const userMessage: ExtendedMessage = {
             id: messageId,
             role: 'user',
             created: Date.now(),
-            content: content as any, // Type assertion needed due to content structure
-            sessionId: sessionId // Add sessionId to the message object for tracking
+            content: uiMessageParts, // Directly use uiMessageParts
+            sessionId: sessionId
         };
 
         // Update messages state with the new message
@@ -186,20 +222,21 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
             sessionId: sessionId
         };
 
-        // If a temporary prepended reference exists, extract its data for the 'prependedCode' field
+        // If a temporary prepended reference exists, pass it as 'prependedCode'.
+        // This tempPrependedRef should now be a full CodeReference-like object.
         if (tempPrependedRef) {
-            console.log('DEBUG: Found temporary prepended reference, adding its data to payload.');
+            // console.log('DEBUG: Found temporary prepended reference, adding it as prependedCode to payload.'); // Removed
             messagePayload.prependedCode = {
-                content: tempPrependedRef.content,
+                id: tempPrependedRef.id,
+                filePath: tempPrependedRef.filePath,
                 fileName: tempPrependedRef.fileName,
+                selectedText: tempPrependedRef.selectedText,
                 languageId: tempPrependedRef.languageId,
                 startLine: tempPrependedRef.startLine,
-                endLine: tempPrependedRef.endLine
+                endLine: tempPrependedRef.endLine,
             };
-            // Add UI text indicating prepended code was included (optional, could be removed if chip is enough)
-            // content.push({ type: 'text', text: `With code from ${tempPrependedRef.fileName}` }); 
         } else {
-             console.log('DEBUG: No temporary prepended reference found.');
+             // console.log('DEBUG: No temporary prepended reference found.'); // Removed
         }
 
         // Send message to extension
@@ -224,7 +261,7 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
 
     // Restart the server
     const restartServer = useCallback(() => {
-        console.log('Requesting server restart');
+        // console.log('Requesting server restart'); // Removed
         vscode.postMessage({
             command: MessageType.RESTART_SERVER
         });
@@ -240,7 +277,7 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
             const message = event.data;
             if (!message || !message.command) return;
 
-            console.log('Received message from extension:', message.command);
+            // console.log('Received message from extension:', message.command); // Removed
 
             switch (message.command) {
                 case MessageType.CHAT_RESPONSE:
@@ -248,11 +285,11 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
                         try {
                             // Process intermediate content (thinking or tool usage)
                             if (message.message.content && Array.isArray(message.message.content)) {
-                                if (process.env.NODE_ENV === 'development') {
-                                    console.debug('Processing message content:',
-                                        JSON.stringify(message.message.content.map((c: any) => ({ type: c.type })))
-                                    );
-                                }
+                                // if (process.env.NODE_ENV === 'development') { // Removed
+                                    // console.debug('Processing message content:', // Removed
+                                        // JSON.stringify(message.message.content.map((c: any) => ({ type: c.type }))) // Removed
+                                    // ); // Removed
+                                // } // Removed
 
                                 // Look for thinking content first
                                 const thinkingContent = message.message.content.find(
@@ -262,9 +299,9 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
                                 if (thinkingContent && 'thinking' in thinkingContent) {
                                     setIntermediateText(thinkingContent.thinking);
 
-                                    if (process.env.NODE_ENV === 'development') {
-                                        console.debug('Updated intermediate text from thinking:', thinkingContent.thinking);
-                                    }
+                                    // if (process.env.NODE_ENV === 'development') { // Removed
+                                        // console.debug('Updated intermediate text from thinking:', thinkingContent.thinking); // Removed
+                                    // } // Removed
 
                                     return; // Don't add thinking messages to the main message list
                                 }
@@ -278,9 +315,9 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
                                     const formattedText = formatIntermediateContent(toolRequestContent);
                                     setIntermediateText(formattedText);
 
-                                    if (process.env.NODE_ENV === 'development') {
-                                        console.debug('Updated intermediate text from tool request:', formattedText);
-                                    }
+                                    // if (process.env.NODE_ENV === 'development') { // Removed
+                                        // console.debug('Updated intermediate text from tool request:', formattedText); // Removed
+                                    // } // Removed
 
                                     return; // Don't add tool request messages to the main message list
                                 }
@@ -313,7 +350,7 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
 
                                 // Only update if the content has changed
                                 if (newContentSummary !== existingContentSummary) {
-                                    console.log('Updating existing message with new content:', message.message.id);
+                                    // console.log('Updating existing message with new content:', message.message.id); // Removed
 
                                     safeguardedSetMessages(prev => {
                                         const updated = [...prev];
@@ -321,7 +358,7 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
                                         return updated;
                                     });
                                 } else {
-                                    console.log('Content unchanged, skipping update');
+                                    // console.log('Content unchanged, skipping update'); // Removed
                                 }
                             }
                             return;
@@ -334,7 +371,7 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
                             );
 
                             if (hasEmptyTextOnly && message.message.content.length > 0) {
-                                console.log('Skipping empty text message');
+                                // console.log('Skipping empty text message'); // Removed
                                 return;
                             }
                         }
@@ -360,7 +397,7 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
                     }
                     break;
                 case MessageType.GENERATION_FINISHED:
-                    console.log('Generation finished event received');
+                    // console.log('Generation finished event received'); // Removed
                     // Explicitly clear loading state and intermediate text
                     setIsLoading(false);
                     setIntermediateText(null);
@@ -368,7 +405,7 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
                     break;
                 case MessageType.SERVER_STATUS:
                     if (message.status) {
-                        console.log('Updating server status:', message.status);
+                        // console.log('Updating server status:', message.status); // Removed
 
                         // Check if server is transitioning from stopped/error to running
                         const wasDown = serverStatus === 'stopped' || serverStatus === 'error';
@@ -378,22 +415,22 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
                         setServerStatus(message.status);
 
                         // Show server back up message if appropriate
-                        if (wasDown && isNowRunning) {
-                            const serverUpMessage: ExtendedMessage = {
-                                id: `server_up_${Date.now()}`,
-                                role: 'system',
-                                created: Date.now(),
-                                content: [{
-                                    type: 'text',
-                                    text: 'Goose server is now connected and ready.'
-                                }]
-                            };
-                            safeguardedSetMessages(prev => [...prev, serverUpMessage]);
-                        }
+                        // if (wasDown && isNowRunning) { // REMOVED: System message for server connection
+                        //     const serverUpMessage: ExtendedMessage = {
+                        //         id: `server_up_${Date.now()}`,
+                        //         role: 'system',
+                        //         created: Date.now(),
+                        //         content: [{
+                        //             type: 'text',
+                        //             text: 'Goose server is now connected and ready.'
+                        //         }]
+                        //     };
+                        //     safeguardedSetMessages(prev => [...prev, serverUpMessage]);
+                        // }
                     }
                     break;
                 case MessageType.SERVER_EXIT:
-                    console.log('Server process exited with code:', message.code);
+                    // console.log('Server process exited with code:', message.code); // Removed
                     setServerStatus('stopped');
                     // We'll let the GeneratingIndicator component in MessageList handle the display
                     // of the server exit status, so we don't need to create a separate message
@@ -401,7 +438,7 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
                 case MessageType.ERROR:
                     if (message.errorMessage) {
                         console.error('Error from extension:', message.errorMessage);
-                        console.log('Connection error detected, updating server status to stopped');
+                        // console.log('Connection error detected, updating server status to stopped'); // Kept console.error, removed this log
                         setServerStatus('stopped');
                         // We're now handling error display through the GeneratingIndicator component
                         // so we don't need to create a separate error message
@@ -409,24 +446,27 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
                     break;
                 case MessageType.PREPARE_MESSAGE_WITH_CODE:
                     if (message.payload) {
-                        console.log('Received PREPARE_MESSAGE_WITH_CODE, creating temporary reference:', message.payload.fileName);
+                        const payload = message.payload as PrependedCodePayload; // Cast payload
+                        // console.log('Received PREPARE_MESSAGE_WITH_CODE, creating temporary reference:', payload.fileName); // Removed
                         // Create a temporary reference object and add it to the codeReferences state
+                        // Ensure this uses selectedText and other CodeReference fields from the payload
                         const tempRef: TemporaryPrependedRef = {
-                            id: `prepended_${Date.now()}`, // Unique ID for the temporary item
+                            id: payload.id || `prepended_${Date.now()}`, // Use ID from payload or generate
                             isPrepended: true,
-                            content: message.payload.content,
-                            fileName: message.payload.fileName,
-                            languageId: message.payload.languageId,
-                            startLine: message.payload.startLine,
-                            endLine: message.payload.endLine
+                            filePath: payload.filePath,
+                            fileName: payload.fileName,
+                            selectedText: payload.selectedText, // Use selectedText from payload
+                            languageId: payload.languageId,
+                            startLine: payload.startLine,
+                            endLine: payload.endLine
                         };
                         // Replace existing references/prepended code with this new one
-                        setCodeReferences([tempRef]); 
+                        setCodeReferences([tempRef]);
                     }
                     break;
                 case MessageType.ADD_CODE_REFERENCE:
                     if (message.codeReference) {
-                        console.log('Adding code reference from selection:', message.codeReference.fileName);
+                        // console.log('Adding code reference from selection:', message.codeReference.fileName); // Removed
                         // Ensure no temporary prepended ref exists when adding a real one
                         setCodeReferences(prev => [...prev.filter(ref => ref.isPrepended !== true), message.codeReference]);
                     }
@@ -438,12 +478,12 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
                     break;
                 case MessageType.REMOVE_CODE_REFERENCE:
                     if (message.id) {
-                        console.log('Removing code reference:', message.id);
+                        // console.log('Removing code reference:', message.id); // Removed
                         setCodeReferences(prev => prev.filter(ref => ref.id !== message.id));
                     }
                     break;
                 case MessageType.SESSION_LOADED:
-                    console.log('Session loaded with ID:', message.sessionId);
+                    // console.log('Session loaded with ID:', message.sessionId); // Removed
                     
                     // Clear any prepended code/references when switching sessions
                     setCodeReferences([]); 
@@ -456,7 +496,7 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
 
                     // Check if we have messages to display
                     if (!message.messages || !Array.isArray(message.messages) || message.messages.length === 0) {
-                        console.log('No messages in session');
+                        // console.log('No messages in session'); // Removed
                         break;
                     }
 
@@ -474,7 +514,7 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
                                     sessionId: msg.sessionId
                                 }));
 
-                            console.log(`Loading ${validMessages.length} messages`);
+                            // console.log(`Loading ${validMessages.length} messages`); // Removed
                             setMessages(validMessages);
                         } catch (err) {
                             console.error('Error processing messages:', err);
@@ -483,13 +523,31 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
                     break;
                 case MessageType.SET_THEME:
                     if (message.theme && typeof message.theme === 'string') {
-                        console.log('Setting shiki theme:', message.theme);
+                        // console.log('Setting shiki theme:', message.theme); // Removed
                         setShikiTheme(message.theme);
                     }
                     break;
+                case MessageType.SET_EXTENSION_VERSION:
+                    if (message.version && typeof message.version === 'string') {
+                        // console.log('Received extension version:', message.version); // Removed
+                        setExtensionVersion(message.version);
+                    }
+                    break;
+                case MessageType.RESOURCES_READY:
+                    if (message.resources && typeof message.resources === 'object') {
+                        // console.log('Received resources from extension:', message.resources); // Removed
+                        setResources(message.resources);
+                    }
+                    break;
+                // Add cases for messages handled by other hooks to prevent "Unknown message type" logs
+                case MessageType.SESSIONS_LIST:
+                case MessageType.SESSION_LOADED:
+                    // These are handled by useSessionManagement, so we can ignore them here.
+                    // console.debug(`[useVSCodeMessaging] Ignoring message type ${message.command}, handled elsewhere.`);
+                    break;
                 default:
                     // Handle unknown message types
-                    console.warn('Unknown message type:', message.command);
+                    console.warn('[useVSCodeMessaging] Unknown message type:', message.command, message);
             }
         };
 
@@ -515,6 +573,25 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
         messages
     ]);
 
+    // Effect to re-fetch server status when webview becomes visible
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                // console.log('[useVSCodeMessaging] Webview became visible, requesting server status.');
+                vscode.postMessage({ command: MessageType.GET_SERVER_STATUS });
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        // The initial server status is already sent by the extension
+        // in response to WEBVIEW_READY. This listener is specifically for
+        // when the tab visibility changes *after* initial load.
+
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, [vscode]); // vscode is stable, so this effect runs once on mount to set up the listener
+
     return {
         messages,
         serverStatus,
@@ -529,6 +606,8 @@ export const useVSCodeMessaging = (): UseVSCodeMessagingResult => {
         stopGeneration,
         restartServer,
         // clearPrependedCode
-        shikiTheme // Export the theme state
+        shikiTheme, // Export the theme state
+        extensionVersion, // Export the extension version
+        resources // Export the resources
     };
 };

@@ -198,56 +198,39 @@ suite('Enhanced Ask About Selection Feature Tests', () => {
             (processor as any).sendChatRequest = sinon.stub().resolves(new Response());
             
             // Prepare test data
-            const prependedCode = {
-                content: 'const code = "small snippet";\nconsole.log(code);',
+            const prependedCode: CodeReference = { // Explicitly type and conform to CodeReference
+                id: 'prepended-test-id',
+                filePath: '/path/to/snippet.ts',
                 fileName: 'snippet.ts',
+                startLine: 1,
+                endLine: 2, // Assuming 2 lines for the snippet
+                selectedText: 'const code = "small snippet";\nconsole.log(code);', // Renamed from content
                 languageId: 'typescript'
             };
             
             // Call the method we're testing
             processor.sendMessage(
                 'Explain this code', // text
-                [], // codeReferences 
+                [], // codeReferencesParam
                 prependedCode, // prependedCode
                 'msg123', // messageId
                 'session123' // sessionId
             );
             
-            // Get the message directly from the ChatProcessor's internal state
-            const userMessage = (processor as any).currentMessages[0];
-            
-            // Basic checks
-            assert.ok(userMessage, 'User message should be created');
-            assert.strictEqual(userMessage.role, 'user', 'Message should have user role');
-            assert.ok(Array.isArray(userMessage.content), 'Message should have content array');
-            assert.ok(userMessage.content.length > 0, 'Message content array should not be empty');
-            
-            // Get the text content of the message
-            const messageText = userMessage.content[0].text;
-            
-            // Test the formatting
-            assert.ok(
-                messageText.includes('```typescript'),
-                'Message should include typescript code block'
-            );
-            assert.ok(
-                messageText.includes('const code'),
-                'Message should include the code content'
-            );
-            assert.ok(
-                messageText.includes('console.log'),
-                'Message should include the complete code'
-            );
-            assert.ok(
-                messageText.includes('Explain this code'),
-                'Message should include the user question'
-            );
-            
-            // Check that the markdown formatting is correct
-            // Code block should be before the question
-            const codeBlockIndex = messageText.indexOf('```typescript');
-            const questionIndex = messageText.indexOf('Explain this code');
-            assert.ok(codeBlockIndex < questionIndex, 'Code block should appear before the user question');
+            // Get the messages from ChatProcessor's internal state
+            const internalMessages = (processor as any).currentMessages;
+            assert.ok(internalMessages.length > 0, 'ChatProcessor should have at least one message');
+            const originalUserMessage = internalMessages[0];
+            assert.strictEqual(originalUserMessage.role, 'user', 'Message should have user role');
+            assert.ok(Array.isArray(originalUserMessage.content), 'Original message should have content array');
+            // New design: Expecting a single TextPart with <user-request>
+            assert.strictEqual(originalUserMessage.content.length, 1, 'Original message content should have one part');
+            assert.strictEqual(originalUserMessage.content[0].type, 'text', 'Content part should be text');
+            const textContent = originalUserMessage.content[0].text;
+            assert.ok(textContent.includes('<user-request>'), 'Content should include <user-request>');
+            assert.ok(textContent.includes('/path/to/snippet.ts'), 'Content should include file path');
+            assert.ok(textContent.includes('const code = "small snippet";'), 'Content should include code');
+            assert.ok(textContent.includes('Explain this code'), 'Content should include user query');
         } finally {
             // Restore the original method
             if (originalSendChatRequest) {

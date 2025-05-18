@@ -4,6 +4,10 @@
 
 ![Screenshot](./resources/screenshot.png)
 
+## ⚠️ Experimental Features Notice ⚠️
+
+Please be aware that this extension is under active development. Some features, especially those related to how information (like code context) is processed and sent to the AI, are experimental and may undergo significant changes. We appreciate your understanding and feedback as we work to stabilize and improve these functionalities.
+
 ## Current Features
 
 * Interactive chat UI

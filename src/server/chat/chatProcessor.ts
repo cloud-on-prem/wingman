@@ -1,8 +1,9 @@
 import { EventEmitter } from 'events';
 import { TextDecoder } from 'util';
 import { ServerManager } from '../serverManager';
-import { Message, createUserMessage, Content } from '../../types';
+import { Message, MessageContent, TextPart, CodeContextPart } from '../../types'; // Updated imports
 import * as vscode from 'vscode';
+import { CodeReference } from '../../utils/codeReferenceManager'; // Added import
 import { SessionManager, SessionEvents } from './sessionManager';
 import { logger } from '../../utils/logger';
 
@@ -24,6 +25,44 @@ type MessageEvent =
     | { type: 'Finish'; reason: string };
 
 /**
+ * Formats a user message with optional code context into the new <user-request> format.
+ * If codeContext is provided, returns the formatted string; otherwise, returns the userQuery as-is.
+ * @param userQuery The user's textual query.
+ * @param codeContext Optional CodeContextPart containing code reference info.
+ */
+export function formatMessageWithCodeContext(
+    userQuery: string,
+    codeContext?: CodeContextPart
+): string {
+    if (!codeContext) {
+        return userQuery;
+    }
+
+    const { filePath, fileName, selectedText, languageId } = codeContext;
+    const codeLines = selectedText ? selectedText.split('\n') : [];
+    const lineCount = codeLines.length;
+
+    let codeBlock = '';
+    if (lineCount < 100 && selectedText.trim() !== '') {
+        // Inline the code, indenting each line by two spaces
+        const indentedCode = codeLines.map(line => `  ${line}`).join('\n');
+        codeBlock = `  \`${languageId || ''}\n${indentedCode}\n  \`\n\n`;
+    } else {
+        // Instruct Goose to read the file
+        codeBlock =
+            `  \`${languageId || ''}\n` +
+            `  // File content for '${fileName}' (${lineCount} lines) is not displayed inline. Goose, please read the file at '${filePath}'.\n` +
+            `  \`\n\n`;
+    }
+
+    return `<user-request>
+'${filePath}' (see below for file content)
+
+${codeBlock}${userQuery}
+</user-request>`;
+}
+
+ /**
  * Handles communication with the Goose server for chat functionality
  */
 export class ChatProcessor {
@@ -50,29 +89,20 @@ export class ChatProcessor {
      * Send a message to the Goose AI
      */
     public async sendMessage(
-        text: string, 
-        codeReferences?: any[], 
-        prependedCode?: any,  
-        messageId?: string, 
+        text: string,
+        codeReferencesParam?: CodeReference[],
+        prependedCode?: CodeReference,
+        messageId?: string,
         sessionId?: string
     ): Promise<void> {
-        if (!text || text.trim() === '') {
-            if ((!codeReferences || codeReferences.length === 0) && !prependedCode) {
-                logger.info('ChatProcessor: sendMessage called with empty user text and no code context. Not proceeding.');
-            } else {
-                logger.info('ChatProcessor: sendMessage called with empty user text (but with code context). Not proceeding as per task 2.1 focusing on user text.');
-            }
+        const hasText = text && text.trim() !== '';
+        const hasCodeReferences = codeReferencesParam && codeReferencesParam.length > 0;
+        const hasPrependedCode = !!prependedCode;
+
+        if (!hasText && !hasCodeReferences && !hasPrependedCode) {
+            logger.info('ChatProcessor: sendMessage called with empty user text and no code context. Not proceeding.');
             return;
         }
-
-        console.log("--- ChatProcessor.sendMessage Start ---");
-        console.log("Received text:", text);
-        console.log("Received codeReferences:", JSON.stringify(codeReferences));
-        console.log("Received prependedCode:", JSON.stringify(prependedCode));
-        console.log("Received messageId:", messageId);
-        console.log("Received sessionId:", sessionId);
-        
-        codeReferences = codeReferences || [];
 
         let effectiveSessionId: string | undefined = sessionId;
 
@@ -83,100 +113,39 @@ export class ChatProcessor {
             }
         }
 
-        console.log("Using session ID:", effectiveSessionId || "none (creating new session)");
-
-        let formattedText = text || '';
-        
-        let prependedCodeProcessedAndValid = false; 
-
-        if (prependedCode) {
-            if (prependedCode.content && typeof prependedCode.content === 'string') {
-                const originalContent = prependedCode.content;
-                const trimmedContent = originalContent.trim();
-
-                if (trimmedContent === '') {
-                    logger.info('ChatProcessor: prependedCode.content is empty or whitespace after trimming. Not including it.');
-                } else {
-                    const languageId = prependedCode.languageId || '';
-                    const fileName = prependedCode.fileName || 'snippet'; 
-                    
-                    console.log(`DEBUG: Adding prepended code block for ${fileName} (${languageId})`);
-                    console.log(`DEBUG: Prepended code content length (trimmed): ${trimmedContent.length}`);
-                    
-                    const codeBlock = "```" + languageId + "\n" + trimmedContent + "\n```\n\n";
-                    
-                    formattedText = codeBlock + formattedText;
-                    codeReferences = []; 
-                    prependedCodeProcessedAndValid = true;
-                    
-                    console.log("Formatted message with prepended code block");
-                    console.log("DEBUG: Final formatted text with prepended code:", formattedText);
-                }
-            } else {
-                logger.warn('ChatProcessor: prependedCode object present but its content is missing or not a string. Ignoring prependedCode.');
+        // Determine code context: prefer prependedCode, else first codeReferencesParam, else undefined
+        let codeContext: CodeContextPart | undefined;
+        if (prependedCode && prependedCode.selectedText && prependedCode.selectedText.trim() !== '') {
+            codeContext = { ...prependedCode, type: 'code_context' };
+        } else if (codeReferencesParam && codeReferencesParam.length > 0) {
+            const firstValid = codeReferencesParam.find(
+                ref => ref && typeof ref.selectedText === 'string' && ref.selectedText.trim() !== ''
+            );
+            if (firstValid) {
+                codeContext = { ...firstValid, type: 'code_context' };
             }
         }
 
-        const validReferenceSummaryLines: string[] = [];
-        const additionalContentBlocks: Content[] = [];
-
-        if (!prependedCodeProcessedAndValid && codeReferences && codeReferences.length > 0) {
-            for (const reference of codeReferences) {
-                if (reference && reference.selectedText && typeof reference.selectedText === 'string') {
-                    const trimmedSelectedText = reference.selectedText.trim();
-                    if (trimmedSelectedText === '') {
-                        logger.info(`ChatProcessor: codeReference from ${reference.filePath || 'unknown file'} selectedText is empty. Excluding this reference.`);
-                    } else {
-                        validReferenceSummaryLines.push(`From ${reference.filePath}:${reference.startLine}-${reference.endLine}`);
-                        
-                        const codeBlock = "```" + (reference.languageId || '') + "\n" + trimmedSelectedText + "\n```";
-                        additionalContentBlocks.push({ type: 'text', text: codeBlock });
-                        logger.info(`ChatProcessor: Adding content from codeReference ${reference.filePath}.`);
-                    }
-                } else {
-                    logger.warn(`ChatProcessor: codeReference from ${reference.filePath || 'unknown file'} has missing, null, or invalid selectedText. Excluding this reference.`);
-                }
-            }
-
-            if (validReferenceSummaryLines.length > 0) {
-                if (formattedText.length > 0) {
-                    formattedText += '\n\n'; 
-                }
-                formattedText += validReferenceSummaryLines.join('\n'); 
-                console.log("Formatted message with valid code references summary.");
-            }
-        }
-
-        console.log("Final formatted message text (with reference summaries):", formattedText);
-        additionalContentBlocks.forEach((block, index) => {
-            if (block.type === 'text') {
-                console.log(`Additional content block ${index + 1}:`, block.text.substring(0, 100) + '...'); 
-            } else if (block.type === 'image') {
-                console.log(`Additional content block ${index + 1}: Image block (mimeType: ${block.mimeType}, data length: ${block.data.length})`);
-            } else {
-                console.log(`Additional content block ${index + 1}: Unknown block type`, block);
-            }
-        });
-
-        const userMessageContent: Content[] = [{ type: 'text', text: formattedText }];
-        userMessageContent.push(...additionalContentBlocks); 
+        // Use the formatting utility to produce the message string
+        const formatted = formatMessageWithCodeContext(text ? text.trim() : '', codeContext);
 
         const userMessage: Message = {
             id: messageId || `user_${Date.now()}`,
             role: 'user',
             created: Date.now(),
-            content: userMessageContent
+            content: [
+                {
+                    type: 'text',
+                    text: formatted
+                }
+            ]
         };
 
-        this.currentMessages.push(userMessage);
-        console.log("Added user message to conversation, total messages:", this.currentMessages.length);
-
+        this.currentMessages.push(userMessage); // This will be used for API serialization later
         this.shouldStop = false;
 
         try {
-            console.log("Sending chat request to server...");
             const response = await this.sendChatRequest(effectiveSessionId);
-            console.log("Got response from server, status:", response.status);
 
             // If this was a new session, load the session info after sending the first message
             if (!effectiveSessionId && this.sessionManager) {
@@ -191,7 +160,6 @@ export class ChatProcessor {
             }
 
             const aiMessageId = `ai_${Date.now()}`;
-            console.log("Created AI message ID:", aiMessageId);
 
             // Ensure the response body is available
             if (!response.body) {
@@ -199,7 +167,6 @@ export class ChatProcessor {
             }
 
             const reader = response.body.getReader();
-            console.log("Created reader for response body");
             const decoder = new TextDecoder();
             let accumulatedData = '';
 
@@ -211,25 +178,21 @@ export class ChatProcessor {
             };
 
             this.currentMessages.push(aiMessage);
-            console.log("Added AI message placeholder to conversation, total messages:", this.currentMessages.length);
-            // Consider emitting an initial MESSAGE_RECEIVED here if a placeholder UI is desired immediately
-            // this.emit(ChatEvents.MESSAGE_RECEIVED, { ...aiMessage });
+            // this.emit(ChatEvents.MESSAGE_RECEIVED, { ...aiMessage }); // Placeholder emission
 
-            console.log("Starting to read streaming response...");
             while (true) {
                 if (this.shouldStop) {
-                    console.log("Stopping generation (shouldStop flag is true)");
+                    logger.info("Stopping generation (shouldStop flag is true)");
                     reader.cancel();
-                    this.emit(ChatEvents.FINISH, { ...aiMessage }, 'stopped'); 
+                    this.emit(ChatEvents.FINISH, { ...aiMessage }, 'stopped');
                     break;
                 }
 
-                console.log("Reading chunk from stream...");
                 const { value, done } = await reader.read();
 
                 if (done) {
-                    console.log("Stream complete, emitting FINISH event");
-                    this.emit(ChatEvents.FINISH, { ...aiMessage }, 'complete'); 
+                    logger.info("Stream complete, emitting FINISH event");
+                    this.emit(ChatEvents.FINISH, { ...aiMessage }, 'complete');
                     break;
                 }
 
@@ -323,8 +286,43 @@ export class ChatProcessor {
     /**
      * Send a chat request to the server
      */
+    private serializeMessagesForApi(messages: Message[]): Message[] {
+        return messages.map(msg => {
+            // Only modify user messages for now, as assistant messages are already in the expected format.
+            // And system messages are not handled by this processor.
+            if (msg.role !== 'user') {
+                return msg;
+            }
+
+            const serializedContent: MessageContent[] = [];
+            for (const part of msg.content) {
+                if (part.type === 'code_context') {
+                    const codeCtxPart = part as CodeContextPart;
+                    let codeToSend = codeCtxPart.selectedText;
+                    const lineCount = codeCtxPart.selectedText.split('\n').length;
+
+                    if (lineCount > 100) {
+                        // As per design: "truncated or replaced with a placeholder"
+                        // Using a placeholder for clarity.
+                        codeToSend = `[Code content >100 lines, see reference. Original selection was from ${codeCtxPart.fileName}:${codeCtxPart.startLine}-${codeCtxPart.endLine}]`;
+                        logger.info(`ChatProcessor: CodeContextPart from ${codeCtxPart.filePath} has ${lineCount} lines. Truncating for API call.`);
+                    }
+
+                    const serializedText = `// Meta: FilePath="${codeCtxPart.filePath}", LanguageId="${codeCtxPart.languageId}", Lines=${codeCtxPart.startLine}-${codeCtxPart.endLine}\n\`\`\`${codeCtxPart.languageId || ''}\n${codeToSend}\n\`\`\``;
+                    serializedContent.push({
+                        type: 'text',
+                        text: serializedText,
+                    } as TextPart);
+                } else {
+                    // TextPart, ImageContent, Tool parts are passed as is
+                    serializedContent.push(part);
+                }
+            }
+            return { ...msg, content: serializedContent };
+        });
+    }
+
     private async sendChatRequest(sessionId?: string): Promise<Response> {
-        console.log("Creating new AbortController for chat request");
         this.abortController = new AbortController();
 
         const workspaceDirectory = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
@@ -334,8 +332,11 @@ export class ChatProcessor {
             throw new Error('API client not available');
         }
 
+        const messagesForApi = this.serializeMessagesForApi(this.currentMessages);
+        // Removed verbose logging of API messages
+
         const params = {
-            prompt: this.currentMessages,
+            prompt: messagesForApi, // Use serialized messages
             abortController: this.abortController,
             sessionId: sessionId,
             workspaceDirectory: workspaceDirectory,

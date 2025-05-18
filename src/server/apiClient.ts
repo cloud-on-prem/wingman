@@ -223,10 +223,11 @@ export class ApiClient {
         const options: RequestInit = { method: 'GET' };
         try {
             const response = await this.request(path, options);
-            const data = await response.json();
+            const rawData = await response.json();
+            // this.logger.debug('Raw response from /sessions:', JSON.stringify(rawData)); // Reverted
             // Handle potential response structures (direct array or object with 'sessions' key)
-            const sessions = Array.isArray(data) ? data : (data?.sessions || []);
-            this.logger.info(`Sessions list fetched successfully. Count: ${sessions.length}`);
+            const sessions = Array.isArray(rawData) ? rawData : (rawData?.sessions || []);
+            this.logger.info(`Sessions list fetched successfully. Processed count: ${sessions.length}`);
             // TODO: Consider adding data validation/transformation if needed
             return sessions;
         } catch (error) {

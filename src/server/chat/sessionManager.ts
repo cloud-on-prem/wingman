@@ -1,7 +1,12 @@
 import { EventEmitter } from 'events';
 import { ServerManager } from '../serverManager';
-import { Message } from '../../types';
+import { Message, MessageContent, TextPart, CodeContextPart } from '../../types'; // Added TextPart, CodeContextPart
 import * as vscode from 'vscode';
+import * as path from 'path'; // Added for path.basename
+import { logger as singletonLogger } from '../../utils/logger'; // Import singletonLogger
+
+// Create a logger instance for this module
+const logger = singletonLogger.createSource('SessionManager');
 
 export interface SessionMetadata {
     id: string;
@@ -129,32 +134,113 @@ export class SessionManager {
     /**
      * Load a specific session by ID
      */
+    // Helper to attempt to parse a serialized CodeContextPart from a TextPart
+    private tryParseSerializedCodeContext(textPart: TextPart): CodeContextPart | null {
+        const metaRegex = /^\/\/ Meta: FilePath="([^"]+)", LanguageId="([^"]*)", Lines=(\d+)-(\d+)\n```([a-zA-Z0-9_.-]*)\n([\s\S]+)\n```$/;
+        const match = textPart.text.match(metaRegex);
+
+        if (match) {
+            try {
+                const filePath = match[1];
+                const languageId = match[2]; // Can be empty
+                const startLine = parseInt(match[3], 10);
+                const endLine = parseInt(match[4], 10);
+                // const langInTripleQuotes = match[5]; // languageId should match this
+                const selectedText = match[6];
+
+                // Note: The 'id' for CodeReference was originally unique.
+                // When reconstructing, we might not have the original ID.
+                // We can generate a new one or decide if it's needed for historical display.
+                // For now, generate a new one.
+                // fileName can be derived.
+                const fileName = path.basename(filePath);
+                const newId = `${fileName}-${startLine}-${endLine}-reconstructed-${Date.now()}`;
+
+                return {
+                    type: 'code_context',
+                    id: newId,
+                    filePath,
+                    fileName,
+                    languageId: languageId || '', // Ensure it's a string
+                    startLine,
+                    endLine,
+                    selectedText,
+                };
+            } catch (e) {
+                logger.warn('Failed to parse components of a potential serialized CodeContextPart:', e, textPart.text);
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Load a specific session by ID
+     */
     public async loadSession(sessionId: string): Promise<Session | null> {
+        logger.info(`Loading session: ${sessionId}`);
         try {
             const apiClient = this.serverManager.getApiClient();
             if (!apiClient || !this.serverManager.isReady()) {
-                console.error(`Cannot load session ${sessionId}: Server not ready`);
+                logger.error(`Cannot load session ${sessionId}: Server or API client not ready.`);
+                this.emit(SessionEvents.ERROR, new Error('Server not ready for loading session'));
                 return null;
             }
 
             try {
-                const session = await apiClient.getSessionHistory(sessionId);
-
-                // Make sure the session has a title property
-                if (!session.metadata.title && session.metadata.description) {
-                    session.metadata.title = session.metadata.description;
+                const rawSession = await apiClient.getSessionHistory(sessionId);
+                
+                if (!rawSession) {
+                    logger.warn(`Session history not found by API for ID: ${sessionId}`);
+                    this.emit(SessionEvents.ERROR, new Error(`Session ${sessionId} not found by API.`));
+                    return null;
                 }
 
+                // Make sure the session has a title property
+                if (!rawSession.metadata.title && rawSession.metadata.description) {
+                    rawSession.metadata.title = rawSession.metadata.description;
+                }
+
+                // Reconstruct messages: attempt to parse serialized CodeContextParts
+                const reconstructedMessages: Message[] = rawSession.messages.map((msg: Message) => { // Explicitly type msg
+                    if (msg.role === 'user') { // Only process user messages for now
+                        const newContent: MessageContent[] = [];
+                        for (const part of msg.content) {
+                            if (part.type === 'text') {
+                                const textPart = part as TextPart; // Cast to TextPart for tryParseSerializedCodeContext
+                                const codeContextAttempt = this.tryParseSerializedCodeContext(textPart);
+                                if (codeContextAttempt) {
+                                    newContent.push(codeContextAttempt);
+                                    logger.debug(`Reconstructed CodeContextPart from TextPart for session ${sessionId}, message ${msg.id}`);
+                                } else {
+                                    newContent.push(textPart); // Keep as original TextPart
+                                }
+                            } else {
+                                newContent.push(part); // Keep other parts (Image, Tool etc.) as is
+                            }
+                        }
+                        return { ...msg, content: newContent };
+                    }
+                    return msg; // Return assistant/system messages as is
+                });
+
+                const processedSession: Session = {
+                    ...rawSession,
+                    messages: reconstructedMessages,
+                };
+
                 this.currentSessionId = sessionId;
-                this.currentSession = session;
-                this.emit(SessionEvents.SESSION_LOADED, session);
-                return session;
+                this.currentSession = processedSession;
+                this.emit(SessionEvents.SESSION_LOADED, processedSession); 
+                return processedSession;
             } catch (error) {
-                console.error(`Error loading session ${sessionId} from API:`, error);
+                logger.error(`Error loading session ${sessionId} from API:`, error);
+                this.emit(SessionEvents.ERROR, error);
                 return null;
             }
         } catch (error) {
-            console.error(`Error in loadSession ${sessionId}:`, error);
+            logger.error(`General error in loadSession ${sessionId}:`, error);
+            this.emit(SessionEvents.ERROR, error);
             return null;
         }
     }

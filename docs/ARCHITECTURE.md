@@ -115,7 +115,14 @@ sequenceDiagram
 ## Communication
 
 *   **VS Code UI <-> Extension Host:** Standard VS Code API (Commands, Context Menus, WebviewViewProvider).
-*   **Extension Host <-> Chat Webview:** Asynchronous message passing (`postMessage`, `onDidReceiveMessage`), including messages like `WEBVIEW_READY` for initialization. Defined message types in `src/common-types.ts`.
+*   **Extension Host <-> Chat Webview:** Asynchronous message passing (`postMessage`, `onDidReceiveMessage`), including messages like `WEBVIEW_READY` for initialization. Defined message types in `src/types/messages.ts` (previously mentioned `src/common-types.ts` which might be outdated or a general reference).
+
+    *   **Message Structure:** Messages exchanged, particularly those handled by `ChatProcessor` and stored by `SessionManager`, utilize a structured content model. A `Message` object (defined in `src/types/messages.ts`) contains a `content` array, where each element is a `MessageContent` part. Key parts include:
+        *   `TextPart`: Represents plain text segments, which can include user-typed markdown.
+        *   `CodeContextPart`: Represents a snippet of code context. It extends the `CodeReference` interface (from `src/utils/codeReferenceManager.ts`) and includes `filePath`, `fileName`, `startLine`, `endLine`, `selectedText`, and `languageId`, along with a `type: 'code_context'`. This allows for structured transfer of code information and distinct UI rendering.
+        *   Other parts like `ImageContent`, `ToolRequestMessageContent`, etc., are also supported.
+        This structured approach ensures that different types of content within a single message (e.g., a user's question and an accompanying code snippet) are clearly delineated for processing, API serialization, and UI rendering.
+
 *   **Extension Host <-> `goosed` Process:**
     *   Process Management: Spawning/killing the `goosed` executable using Node.js `child_process`.
     *   API Communication: HTTP requests from the Extension Host's `ApiClient` to the local HTTP server run by `goosed`. A secret key is used for authentication.
@@ -367,6 +374,7 @@ sequenceDiagram
 
 1.  **Fetching:** The list of available sessions (`SessionMetadata`) is fetched from the `goosed` API (`GET /sessions`) via the `ApiClient` when requested by the webview.
 2.  **Loading:** When switching to an existing session, the full session details including message history (`Session`) are fetched from the `goosed` API (`GET /sessions/{sessionId}/history`).
+    *   **Message Reconstruction:** Upon loading, the `SessionManager.loadSession` method processes the messages. If user messages contain `TextPart` content that matches a specific serialization format (used by `ChatProcessor` to send code context to the API, e.g., `// Meta: ... \`\`\`...\`\`\``), `SessionManager` attempts to parse these `TextPart`s and reconstruct them into proper `CodeContextPart` objects. This ensures that the rest of the extension (including the UI) works with the rich, structured message content, even if the backend API might have stored a serialized version.
 3.  **Creation & Synchronization:**
     *   New sessions are first created locally within the `SessionManager` using a frontend-generated ID (e.g., timestamp-based). The UI reflects this new session immediately.
     *   The session is implicitly created on the backend when the *first message* for that session is sent via a `POST` request to the `/reply` endpoint. The request body includes the frontend-generated `session_id`.

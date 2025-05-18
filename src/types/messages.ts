@@ -3,12 +3,26 @@
  * for direct serialization between client and server
  */
 
+import { CodeReference } from '../utils/codeReferenceManager';
+
 export type Role = 'user' | 'assistant';
 
-export interface TextContent {
+/**
+ * Represents a plain text segment, potentially containing user-typed markdown.
+ */
+export interface TextPart {
     type: 'text';
     text: string;
     annotations?: Record<string, unknown>;
+}
+
+/**
+ * Represents a snippet of code context, directly using or extending CodeReference.
+ * This part is intended for structured data transfer and specific UI rendering.
+ */
+export interface CodeContextPart extends CodeReference {
+    type: 'code_context';
+    // id, filePath, fileName, startLine, endLine, selectedText, languageId are inherited from CodeReference.
 }
 
 export interface ImageContent {
@@ -18,7 +32,7 @@ export interface ImageContent {
     annotations?: Record<string, unknown>;
 }
 
-export type Content = TextContent | ImageContent;
+export type Content = TextPart | CodeContextPart | ImageContent; // Updated to include CodeContextPart
 
 export interface ToolCall {
     name: string;
@@ -38,7 +52,7 @@ export interface ToolRequest {
 
 export interface ToolResponse {
     id: string;
-    toolResult: ToolCallResult<Content[]>;
+    toolResult: ToolCallResult<MessageContent[]>; // Changed Content[] to MessageContent[]
 }
 
 export interface ToolConfirmationRequest {
@@ -57,7 +71,7 @@ export interface ToolRequestMessageContent {
 export interface ToolResponseMessageContent {
     type: 'toolResponse';
     id: string;
-    toolResult: ToolCallResult<Content[]>;
+    toolResult: ToolCallResult<MessageContent[]>; // Changed Content[] to MessageContent[]
 }
 
 export interface ToolConfirmationRequestMessageContent {
@@ -69,7 +83,8 @@ export interface ToolConfirmationRequestMessageContent {
 }
 
 export type MessageContent =
-    | TextContent
+    | TextPart // Changed from TextContent
+    | CodeContextPart // Added
     | ImageContent
     | ToolRequestMessageContent
     | ToolResponseMessageContent
@@ -88,7 +103,7 @@ export function createUserMessage(text: string): Message {
         id: generateId(),
         role: 'user',
         created: Math.floor(Date.now() / 1000),
-        content: [{ type: 'text', text }],
+        content: [{ type: 'text', text } as TextPart], // Cast to TextPart
     };
 }
 
@@ -97,7 +112,7 @@ export function createAssistantMessage(text: string): Message {
         id: generateId(),
         role: 'assistant',
         created: Math.floor(Date.now() / 1000),
-        content: [{ type: 'text', text }],
+        content: [{ type: 'text', text } as TextPart], // Cast to TextPart
     };
 }
 
@@ -126,7 +141,7 @@ export function createToolRequestMessage(
     };
 }
 
-export function createToolResponseMessage(id: string, result: Content[]): Message {
+export function createToolResponseMessage(id: string, result: MessageContent[]): Message { // Changed Content[] to MessageContent[]
     return {
         id: generateId(),
         role: 'user',
@@ -170,7 +185,7 @@ function generateId(): string {
 // Helper functions to extract content from messages
 export function getTextContent(message: Message): string {
     return message.content
-        .filter((content): content is TextContent => content.type === 'text')
+        .filter((content): content is TextPart => content.type === 'text') // Changed TextContent to TextPart
         .map((content) => content.text)
         .join('\n');
 }
@@ -204,4 +219,4 @@ export function hasCompletedToolCalls(message: Message): boolean {
     // In a real implementation, you'd need to check if all tool requests have responses
     // by looking through subsequent messages
     return true;
-} 
+}
