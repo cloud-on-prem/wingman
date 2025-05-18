@@ -25,6 +25,44 @@ type MessageEvent =
     | { type: 'Finish'; reason: string };
 
 /**
+ * Formats a user message with optional code context into the new <user-request> format.
+ * If codeContext is provided, returns the formatted string; otherwise, returns the userQuery as-is.
+ * @param userQuery The user's textual query.
+ * @param codeContext Optional CodeContextPart containing code reference info.
+ */
+export function formatMessageWithCodeContext(
+    userQuery: string,
+    codeContext?: CodeContextPart
+): string {
+    if (!codeContext) {
+        return userQuery;
+    }
+
+    const { filePath, fileName, selectedText, languageId } = codeContext;
+    const codeLines = selectedText ? selectedText.split('\n') : [];
+    const lineCount = codeLines.length;
+
+    let codeBlock = '';
+    if (lineCount < 100 && selectedText.trim() !== '') {
+        // Inline the code, indenting each line by two spaces
+        const indentedCode = codeLines.map(line => `  ${line}`).join('\n');
+        codeBlock = `  \`${languageId || ''}\n${indentedCode}\n  \`\n\n`;
+    } else {
+        // Instruct Goose to read the file
+        codeBlock =
+            `  \`${languageId || ''}\n` +
+            `  // File content for '${fileName}' (${lineCount} lines) is not displayed inline. Goose, please read the file at '${filePath}'.\n` +
+            `  \`\n\n`;
+    }
+
+    return `<user-request>
+'${filePath}' (see below for file content)
+
+${codeBlock}${userQuery}
+</user-request>`;
+}
+
+ /**
  * Handles communication with the Goose server for chat functionality
  */
 export class ChatProcessor {
@@ -52,27 +90,14 @@ export class ChatProcessor {
      */
     public async sendMessage(
         text: string,
-        codeReferencesParam?: CodeReference[], // Changed type from any[]
-        prependedCode?: CodeReference,  // Changed type from any, assuming it's a single CodeReference
+        codeReferencesParam?: CodeReference[],
+        prependedCode?: CodeReference,
         messageId?: string,
         sessionId?: string
     ): Promise<void> {
-        // Retain existing initial guard for empty text if no code context.
-        // The design implies that a message can consist only of CodeContextParts.
-        // However, the original check was:
-        // if (!text || text.trim() === '') {
-        //     if ((!codeReferencesParam || codeReferencesParam.length === 0) && !prependedCode) {
-        //         logger.info('ChatProcessor: sendMessage called with empty user text and no code context. Not proceeding.');
-        //         return;
-        //     } else {
-        //          // If there's code context, we might proceed even with empty text.
-        //          // For now, let's keep the original behaviour of requiring text if no code.
-        //     }
-        // }
-        // For now, let's simplify: if there's no text AND no code references at all, then return.
         const hasText = text && text.trim() !== '';
         const hasCodeReferences = codeReferencesParam && codeReferencesParam.length > 0;
-        const hasPrependedCode = !!prependedCode; // Simplified check
+        const hasPrependedCode = !!prependedCode;
 
         if (!hasText && !hasCodeReferences && !hasPrependedCode) {
             logger.info('ChatProcessor: sendMessage called with empty user text and no code context. Not proceeding.');
@@ -88,68 +113,32 @@ export class ChatProcessor {
             }
         }
 
-        const userMessageContent: MessageContent[] = [];
-
-        // Handle prependedCode: if it exists, treat it as a single CodeReference
-        // and convert it to a CodeContextPart.
-        // The original logic for prependedCode was to inline it into the text and clear other codeReferences.
-        // The new design suggests all code context becomes CodeContextPart.
-        // If prependedCode is meant to be the *only* code context, the calling code should ensure codeReferencesParam is empty.
-        if (prependedCode) {
-            if (prependedCode.selectedText && prependedCode.selectedText.trim() !== '') {
-                userMessageContent.push({
-                    ...prependedCode, // Spread all properties from CodeReference
-                    type: 'code_context', // Add the type
-                });
-                logger.info(`ChatProcessor: Added prependedCode as CodeContextPart from ${prependedCode.filePath}.`);
-            } else {
-                logger.warn(`ChatProcessor: prependedCode from ${prependedCode.filePath || 'unknown file'} has empty selectedText. Excluding.`);
+        // Determine code context: prefer prependedCode, else first codeReferencesParam, else undefined
+        let codeContext: CodeContextPart | undefined;
+        if (prependedCode && prependedCode.selectedText && prependedCode.selectedText.trim() !== '') {
+            codeContext = { ...prependedCode, type: 'code_context' };
+        } else if (codeReferencesParam && codeReferencesParam.length > 0) {
+            const firstValid = codeReferencesParam.find(
+                ref => ref && typeof ref.selectedText === 'string' && ref.selectedText.trim() !== ''
+            );
+            if (firstValid) {
+                codeContext = { ...firstValid, type: 'code_context' };
             }
         }
 
-        // Handle codeReferencesParam for multiple code references
-        // This will add them after prependedCode if both are present.
-        // The design doc implies codeReferencesParam is the main source.
-        if (codeReferencesParam && codeReferencesParam.length > 0) {
-            for (const reference of codeReferencesParam) {
-                if (reference && reference.selectedText && typeof reference.selectedText === 'string') {
-                    const trimmedSelectedText = reference.selectedText.trim();
-                    if (trimmedSelectedText === '') {
-                        logger.info(`ChatProcessor: codeReference from ${reference.filePath || 'unknown file'} selectedText is empty. Excluding this reference.`);
-                    } else {
-                        userMessageContent.push({
-                            ...reference, // Spread all properties from CodeReference
-                            type: 'code_context', // Add the type
-                        });
-                        logger.info(`ChatProcessor: Added codeReference as CodeContextPart from ${reference.filePath}.`);
-                    }
-                } else {
-                    logger.warn(`ChatProcessor: codeReference from ${reference.filePath || 'unknown file'} has missing, null, or invalid selectedText. Excluding this reference.`);
-                }
-            }
-        }
-        
-        // Add the user's textual query as a TextPart, if it exists
-        if (hasText) {
-            userMessageContent.push({
-                type: 'text',
-                text: text.trim(), // Use the original text, trimmed
-            });
-            logger.info('ChatProcessor: Added user text as TextPart.');
-        }
-        
-        // If after all processing, userMessageContent is empty, do not proceed.
-        // This can happen if text was empty and all code references were invalid/empty.
-        if (userMessageContent.length === 0) {
-            logger.info('ChatProcessor: No valid content (text or code) to send. Not proceeding.');
-            return;
-        }
+        // Use the formatting utility to produce the message string
+        const formatted = formatMessageWithCodeContext(text ? text.trim() : '', codeContext);
 
         const userMessage: Message = {
             id: messageId || `user_${Date.now()}`,
             role: 'user',
             created: Date.now(),
-            content: userMessageContent,
+            content: [
+                {
+                    type: 'text',
+                    text: formatted
+                }
+            ]
         };
 
         this.currentMessages.push(userMessage); // This will be used for API serialization later

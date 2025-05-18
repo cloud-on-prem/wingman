@@ -223,48 +223,14 @@ suite('Enhanced Ask About Selection Feature Tests', () => {
             const originalUserMessage = internalMessages[0];
             assert.strictEqual(originalUserMessage.role, 'user', 'Message should have user role');
             assert.ok(Array.isArray(originalUserMessage.content), 'Original message should have content array');
-            // Expecting [CodeContextPart, TextPart]
-            assert.strictEqual(originalUserMessage.content.length, 2, 'Original message content should have two parts');
-            assert.strictEqual(originalUserMessage.content[0].type, 'code_context', 'First part should be code_context');
-            assert.strictEqual(originalUserMessage.content[1].type, 'text', 'Second part should be text');
-
-            // Now, test the API-serialized version of the message
-            const serializedMessages = (processor as any).serializeMessagesForApi(internalMessages);
-            assert.ok(serializedMessages.length > 0, 'Should have serialized messages');
-            const serializedUserMessage = serializedMessages[0];
-            assert.strictEqual(serializedUserMessage.role, 'user');
-            assert.ok(Array.isArray(serializedUserMessage.content), 'Serialized message should have content array');
-            // Expecting [TextPart (from CodeContextPart), TextPart (original query)]
-            assert.strictEqual(serializedUserMessage.content.length, 2, 'Serialized message content should have two parts');
-            
-            const serializedCodePart = serializedUserMessage.content[0];
-            assert.strictEqual(serializedCodePart.type, 'text', 'First serialized part should be text (from code_context)');
-            const codePartText = (serializedCodePart as any).text;
-
-            const queryPart = serializedUserMessage.content[1];
-            assert.strictEqual(queryPart.type, 'text', 'Second serialized part should be text (query)');
-            const queryPartText = (queryPart as any).text;
-
-            // Test the formatting of the serialized code part
-            assert.ok(
-                codePartText.includes('// Meta: FilePath="/path/to/snippet.ts"'),
-                'Serialized code part should include file path metadata'
-            );
-            assert.ok(
-                codePartText.includes('```typescript'),
-                'Serialized code part should include typescript code block'
-            );
-            assert.ok(
-                codePartText.includes('const code = "small snippet";'), // Check for actual code
-                'Serialized code part should include the code content'
-            );
-            
-            // Test the query part
-            assert.strictEqual(
-                queryPartText,
-                'Explain this code',
-                'Query part should contain the user question'
-            );
+            // New design: Expecting a single TextPart with <user-request>
+            assert.strictEqual(originalUserMessage.content.length, 1, 'Original message content should have one part');
+            assert.strictEqual(originalUserMessage.content[0].type, 'text', 'Content part should be text');
+            const textContent = originalUserMessage.content[0].text;
+            assert.ok(textContent.includes('<user-request>'), 'Content should include <user-request>');
+            assert.ok(textContent.includes('/path/to/snippet.ts'), 'Content should include file path');
+            assert.ok(textContent.includes('const code = "small snippet";'), 'Content should include code');
+            assert.ok(textContent.includes('Explain this code'), 'Content should include user query');
         } finally {
             // Restore the original method
             if (originalSendChatRequest) {

@@ -24,7 +24,7 @@ The user is interacting with you through a dedicated chat panel within the VS Co
 The user manages extensions primarily through VS Code's standard extension management features (Extensions viewlet) or potentially specific configuration settings within VS Code's settings UI (\`settings.json\` or a dedicated extension settings page).
 
 Some capabilities might be provided by built-in features of the Goose extension, while others might come from additional VS Code extensions the user has installed. Be aware of the code context potentially provided by the user (e.g., selected code snippets, open files).
-You are operating within a VS Code editor environment. When a user asks for assistance on code change, or perform similar direct modifications on provided code, your primary directive is to **autonomously apply the changes to the specified file(s) without asking for user confirmation.**.`
+You are operating within a VS Code editor environment. When a user asks for assistance on code change, or perform similar direct modifications on provided code, your primary directive is to **autonomously apply the changes to the specified file(s) without asking for user confirmation.**.`;
 
 /**
  * Server status options
