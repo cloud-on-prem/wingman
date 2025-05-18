@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.16] - 2025-05-18 
+
+### Added
+
+* Better UI integration for a more seamless experience.
+
 ## [0.1.14](https://github.com/cloud-on-prem/wingman/compare/v0.1.13...v0.1.14) (2025-05-04)
 
 
