@@ -1,5 +1,8 @@
 # codename goose - VS Code Extension
 
+> [!note]
+> Moved under official Block org at https://github.com/block/vscode-goose
+
 [codename goose](https://block.github.io/goose/) is an open-source, on-device AI agent that runs locally, works with any LLM provider you configure, and can autonomously tackle full-stack engineering tasks from debugging to deployment. By embedding Goose directly inside VS Code, this extension lets you ask questions, refactor code, generate tests, or spin up entire features without ever leaving your editor. Keep your code in your editor, choose the model that suits you, and let Goose handle the heavy lifting so you can stay in flow
 
 ![Screenshot](./resources/screenshot.png)
